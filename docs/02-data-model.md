@@ -50,6 +50,11 @@ Suggested fields:
 - parser_confidence
 - template_variant
 - extraction_notes
+- scholar_wrapper_url
+- target_url
+- resource_type_hint
+- venue_guess
+- year_guess
 
 ### 4. paper_candidate_normalized
 Normalization layer separate from raw extraction.

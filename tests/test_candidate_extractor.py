@@ -6,7 +6,7 @@ def test_extract_candidates_from_simple_html_anchor_context():
     html = """
     <html><body>
       <div>
-        <a href="https://example.org/paper1">A long enough paper title for extraction testing in scholar email</a>
+        <a href="https://scholar.google.com/scholar_url?url=https%3A%2F%2Fexample.org%2Fpaper1&hl=en">[PDF] A long enough paper title for extraction testing in scholar email</a>
       </div>
       <div>Author A, Author B - Journal of Tests, 2026</div>
     </body></html>
@@ -22,5 +22,9 @@ def test_extract_candidates_from_simple_html_anchor_context():
     )
     candidates = extract_candidates(parsed, mail_uid="123")
     assert len(candidates) == 1
-    assert candidates[0].raw_title.startswith("A long enough paper title")
+    assert candidates[0].raw_title == "A long enough paper title for extraction testing in scholar email"
     assert candidates[0].raw_link == "https://example.org/paper1"
+    assert candidates[0].target_url == "https://example.org/paper1"
+    assert candidates[0].resource_type_hint == "pdf"
+    assert candidates[0].venue_guess == "Journal of Tests"
+    assert candidates[0].year_guess == "2026"

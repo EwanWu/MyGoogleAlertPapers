@@ -18,6 +18,8 @@ Deliverables:
 - improved candidate extraction beyond bare anchor fallback
 - candidate count write-back into mail_ingestion_record
 - basic self-checks/tests for detector and extractor
+- multi-account test mailbox support via existing IMAP skill config
+- extractor v2 with Scholar URL unwrapping and snippet-derived venue/year hints
 
 ## Phase 2: normalization and enrichment
 Deliverables:

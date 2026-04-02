@@ -50,6 +50,11 @@ CREATE TABLE IF NOT EXISTS paper_candidate (
     parser_confidence REAL,
     template_variant TEXT,
     extraction_notes TEXT,
+    scholar_wrapper_url TEXT,
+    target_url TEXT,
+    resource_type_hint TEXT,
+    venue_guess TEXT,
+    year_guess TEXT,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -90,8 +95,22 @@ CREATE TABLE IF NOT EXISTS cost_event (
 """
 
 
+ALTERS = [
+    "ALTER TABLE paper_candidate ADD COLUMN scholar_wrapper_url TEXT",
+    "ALTER TABLE paper_candidate ADD COLUMN target_url TEXT",
+    "ALTER TABLE paper_candidate ADD COLUMN resource_type_hint TEXT",
+    "ALTER TABLE paper_candidate ADD COLUMN venue_guess TEXT",
+    "ALTER TABLE paper_candidate ADD COLUMN year_guess TEXT",
+]
+
+
 def create_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA_SQL)
+    for stmt in ALTERS:
+        try:
+            conn.execute(stmt)
+        except sqlite3.OperationalError:
+            pass
     conn.commit()
 
 

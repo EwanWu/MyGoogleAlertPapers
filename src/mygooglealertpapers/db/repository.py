@@ -97,8 +97,9 @@ class Repository:
             INSERT INTO paper_candidate (
                 candidate_id, mail_uid, candidate_index_in_mail, raw_title, raw_authors,
                 raw_source_text, raw_link, raw_snippet, parser_confidence,
-                template_variant, extraction_notes
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                template_variant, extraction_notes, scholar_wrapper_url,
+                target_url, resource_type_hint, venue_guess, year_guess
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 (
@@ -113,6 +114,11 @@ class Repository:
                     c.parser_confidence,
                     c.template_variant,
                     c.extraction_notes,
+                    c.scholar_wrapper_url,
+                    c.target_url,
+                    c.resource_type_hint,
+                    c.venue_guess,
+                    c.year_guess,
                 )
                 for c in candidates
             ],
