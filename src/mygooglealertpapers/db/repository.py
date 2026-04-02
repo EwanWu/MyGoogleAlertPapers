@@ -124,6 +124,22 @@ class Repository:
             ],
         )
 
+    def insert_source_record(self, conn: sqlite3.Connection, rec) -> None:
+        conn.execute(
+            """
+            INSERT INTO source_record (
+                candidate_id, source_name, query_type, query_string, matched,
+                match_score, external_id, title, authors_json, abstract, venue, year,
+                publication_type, doi, pmid, pmcid, url, raw_payload_json, latency_ms
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                rec.candidate_id, rec.source_name, rec.query_type, rec.query_string, int(rec.matched),
+                rec.match_score, rec.external_id, rec.title, rec.authors_json, rec.abstract, rec.venue, rec.year,
+                rec.publication_type, rec.doi, rec.pmid, rec.pmcid, rec.url, rec.raw_payload_json, rec.latency_ms
+            ),
+        )
+
     def insert_cost_event(
         self,
         conn: sqlite3.Connection,

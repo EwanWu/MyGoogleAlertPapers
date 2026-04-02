@@ -121,13 +121,16 @@ Parse stored raw snapshots into candidate records.
 Normalize extracted candidates and extract basic identifiers.
 
 ### `mgap enrich-candidates`
-Run enrichment for selected candidates.
+Run enrichment for selected normalized candidates.
 
 ### `mgap report-batch`
 Summarize ingestion batch statistics and costs.
 
 ### `mgap report-normalization`
 Summarize normalization coverage such as DOI/PMID extraction and canonical URL domains.
+
+### `mgap report-enrichment`
+Summarize provider coverage and source_record match counts.
 
 ## SQLite schema bootstrap plan
 The first pass can create these tables:

@@ -19,6 +19,8 @@ class CostTracker:
         mail_uid: str | None = None,
         candidate_id: str | None = None,
         notes: str | None = None,
+        provider: str | None = None,
+        latency_ms: int | None = None,
     ) -> None:
         self.repository.insert_cost_event(
             conn,
@@ -27,10 +29,11 @@ class CostTracker:
             mail_uid=mail_uid,
             candidate_id=candidate_id,
             notes=notes,
+            provider=provider,
             request_count=0,
             tokens_prompt=0,
             tokens_completion=0,
             tokens_total=0,
             estimated_cost_usd=0.0,
-            latency_ms=0,
+            latency_ms=latency_ms or 0,
         )

@@ -76,6 +76,31 @@ CREATE TABLE IF NOT EXISTS paper_candidate_normalized (
     normalized_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
+
+CREATE TABLE IF NOT EXISTS source_record (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    candidate_id TEXT NOT NULL,
+    source_name TEXT NOT NULL,
+    query_type TEXT,
+    query_string TEXT,
+    matched INTEGER,
+    match_score REAL,
+    external_id TEXT,
+    title TEXT,
+    authors_json TEXT,
+    abstract TEXT,
+    venue TEXT,
+    year TEXT,
+    publication_type TEXT,
+    doi TEXT,
+    pmid TEXT,
+    pmcid TEXT,
+    url TEXT,
+    raw_payload_json TEXT,
+    latency_ms INTEGER,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS cost_event (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     mail_uid TEXT,

@@ -101,6 +101,30 @@ Suggested fields:
 - retrieved_at
 - latency_ms
 
+### 5b. source_record
+Stores one enrichment result per provider query.
+
+Suggested fields:
+- candidate_id
+- source_name
+- query_type
+- query_string
+- matched
+- match_score
+- external_id
+- title
+- authors_json
+- abstract
+- venue
+- year
+- publication_type
+- doi
+- pmid
+- pmcid
+- url
+- raw_payload_json
+- latency_ms
+
 ### 6. merged_metadata_proposal
 Multi-source merged proposal before canonicalization.
 

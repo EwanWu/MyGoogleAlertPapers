@@ -53,3 +53,11 @@ Potential use cases:
 
 ## Guiding rule
 Move from safety and observability first, then toward smarter automation.
+
+## Phase 2 (in progress): enrichment skeleton
+Deliverables:
+- source_record persistence
+- Crossref DOI/title lookup
+- PubMed PMID/title lookup
+- OpenAlex DOI/title lookup
+- enrichment coverage reporting
