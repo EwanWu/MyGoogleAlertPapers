@@ -101,6 +101,25 @@ CREATE TABLE IF NOT EXISTS source_record (
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
+
+CREATE TABLE IF NOT EXISTS merged_metadata_proposal (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    candidate_id TEXT NOT NULL,
+    preferred_title TEXT,
+    preferred_authors_json TEXT,
+    preferred_abstract TEXT,
+    preferred_venue TEXT,
+    preferred_year TEXT,
+    preferred_doi TEXT,
+    preferred_pmid TEXT,
+    preferred_publication_type TEXT,
+    version_status TEXT,
+    source_priority_trace TEXT,
+    conflict_flags_json TEXT,
+    merge_confidence REAL,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS cost_event (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     mail_uid TEXT,

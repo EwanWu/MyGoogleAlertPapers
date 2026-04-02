@@ -9,6 +9,8 @@ from mygooglealertpapers.pipeline.ingest import parse_and_extract_candidates, sc
 from mygooglealertpapers.pipeline.normalize import normalize_candidates
 from mygooglealertpapers.pipeline.enrich import enrich_candidates
 from mygooglealertpapers.pipeline.enrich_stats import build_enrichment_stats
+from mygooglealertpapers.pipeline.merge import build_merged_metadata
+from mygooglealertpapers.pipeline.merge_stats import build_merge_stats
 from mygooglealertpapers.pipeline.report import build_batch_report
 from mygooglealertpapers.pipeline.stats import build_normalization_stats
 
@@ -34,7 +36,11 @@ def build_parser() -> argparse.ArgumentParser:
     enrich_parser.add_argument("--limit", type=int, default=100)
 
     subparsers.add_parser("report-normalization", help="Show normalization statistics")
+    merge_parser = subparsers.add_parser("merge-metadata", help="Build merged metadata proposals")
+    merge_parser.add_argument("--limit", type=int, default=100)
+
     subparsers.add_parser("report-enrichment", help="Show enrichment statistics")
+    subparsers.add_parser("report-merge", help="Show merged proposal statistics")
 
     return parser
 
@@ -59,8 +65,12 @@ def main() -> None:
         enrich_candidates(settings, limit=args.limit)
     elif args.command == "report-normalization":
         print(build_normalization_stats(settings.sqlite_path))
+    elif args.command == "merge-metadata":
+        build_merged_metadata(settings, limit=args.limit)
     elif args.command == "report-enrichment":
         print(build_enrichment_stats(settings.sqlite_path))
+    elif args.command == "report-merge":
+        print(build_merge_stats(settings.sqlite_path))
     else:
         parser.error(f"Unknown command: {args.command}")
 
