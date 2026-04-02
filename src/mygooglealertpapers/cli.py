@@ -11,6 +11,8 @@ from mygooglealertpapers.pipeline.enrich import enrich_candidates
 from mygooglealertpapers.pipeline.enrich_stats import build_enrichment_stats
 from mygooglealertpapers.pipeline.merge import build_merged_metadata
 from mygooglealertpapers.pipeline.merge_stats import build_merge_stats
+from mygooglealertpapers.pipeline.dedup import deduplicate_candidates
+from mygooglealertpapers.pipeline.dedup_stats import build_dedup_stats
 from mygooglealertpapers.pipeline.report import build_batch_report
 from mygooglealertpapers.pipeline.stats import build_normalization_stats
 
@@ -40,7 +42,11 @@ def build_parser() -> argparse.ArgumentParser:
     merge_parser.add_argument("--limit", type=int, default=100)
 
     subparsers.add_parser("report-enrichment", help="Show enrichment statistics")
+    dedup_parser = subparsers.add_parser("dedup-candidates", help="Deduplicate candidates into canonical papers")
+    dedup_parser.add_argument("--limit", type=int, default=100)
+
     subparsers.add_parser("report-merge", help="Show merged proposal statistics")
+    subparsers.add_parser("report-dedup", help="Show dedup statistics")
 
     return parser
 
@@ -69,8 +75,12 @@ def main() -> None:
         build_merged_metadata(settings, limit=args.limit)
     elif args.command == "report-enrichment":
         print(build_enrichment_stats(settings.sqlite_path))
+    elif args.command == "dedup-candidates":
+        deduplicate_candidates(settings, limit=args.limit)
     elif args.command == "report-merge":
         print(build_merge_stats(settings.sqlite_path))
+    elif args.command == "report-dedup":
+        print(build_dedup_stats(settings.sqlite_path))
     else:
         parser.error(f"Unknown command: {args.command}")
 

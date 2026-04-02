@@ -61,3 +61,10 @@ Deliverables:
 - PubMed PMID/title lookup
 - OpenAlex DOI/title lookup
 - enrichment coverage reporting
+
+## Phase 3 (in progress): dedup scaffold
+Deliverables:
+- canonical_paper scaffold
+- candidate_paper_link scaffold
+- conservative matching cascade (DOI/PMID/PMCID/title-author-year)
+- dedup compression statistics

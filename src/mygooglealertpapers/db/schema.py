@@ -120,6 +120,38 @@ CREATE TABLE IF NOT EXISTS merged_metadata_proposal (
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
+
+CREATE TABLE IF NOT EXISTS canonical_paper (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    paper_id TEXT NOT NULL,
+    canonical_title TEXT,
+    canonical_title_key TEXT,
+    canonical_authors_json TEXT,
+    canonical_abstract TEXT,
+    canonical_venue TEXT,
+    canonical_year TEXT,
+    canonical_doi TEXT,
+    canonical_pmid TEXT,
+    canonical_pmcid TEXT,
+    publication_type TEXT,
+    first_author_family TEXT,
+    version_preference TEXT,
+    influence_metrics_json TEXT,
+    topic_signals_json TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS candidate_paper_link (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    candidate_id TEXT NOT NULL,
+    paper_id TEXT NOT NULL,
+    relation_type TEXT,
+    confidence REAL,
+    evidence_json TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS cost_event (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     mail_uid TEXT,
