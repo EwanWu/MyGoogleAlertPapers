@@ -21,6 +21,7 @@
 - Keep source-specific metadata separate from merged proposals.
 - Prefer conservative non-merge over speculative auto-merge.
 - Always log enough to estimate scale-up cost.
+- Reuse existing local credential stores when practical instead of duplicating email secrets across multiple project files.
 
 ## Recommended next coding step
 Implement the minimal skeleton described in `07-implementation-roadmap.md`.

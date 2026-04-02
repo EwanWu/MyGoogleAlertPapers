@@ -77,7 +77,12 @@ MyGoogleAlertPapers/
 ```
 
 ## Configuration model
-Use environment variables via `.env` for secrets and local configuration.
+Use environment variables via `.env` for local configuration. For IMAP credentials, prefer reuse when available.
+
+Configuration loading order for IMAP phase-1 work:
+1. project `.env`
+2. `~/.config/imap-smtp-email/.env` compatibility fallback
+3. defaults where safe
 
 Suggested variables:
 - IMAP_HOST
