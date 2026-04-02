@@ -84,6 +84,8 @@ Configuration loading order for IMAP phase-1 work:
 2. `~/.config/imap-smtp-email/.env` compatibility fallback
 3. defaults where safe
 
+For multi-account skill config, `IMAP_ACCOUNT=<name>` can be used to select a prefixed account such as `GMAIL_`.
+
 Suggested variables:
 - IMAP_HOST
 - IMAP_PORT

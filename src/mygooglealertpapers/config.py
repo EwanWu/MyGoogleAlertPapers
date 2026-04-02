@@ -18,31 +18,38 @@ class Settings:
     log_level: str
     workspace_root: Path
     config_source: str
+    imap_account: str | None
 
 
-def _load_external_imap_skill_env() -> dict[str, str]:
-    path = Path.home() / ".config" / "imap-smtp-email" / ".env"
+def _skill_env_path() -> Path:
+    return Path.home() / ".config" / "imap-smtp-email" / ".env"
+
+
+def _load_external_imap_skill_env(account: str | None = None) -> dict[str, str]:
+    path = _skill_env_path()
     if not path.exists():
         return {}
     raw = dotenv_values(path)
+    prefix = f"{account.upper()}_" if account else ""
     result: dict[str, str] = {}
-    if raw.get("IMAP_HOST"):
-        result["IMAP_HOST"] = str(raw["IMAP_HOST"])
-    if raw.get("IMAP_PORT"):
-        result["IMAP_PORT"] = str(raw["IMAP_PORT"])
-    if raw.get("IMAP_USER"):
-        result["IMAP_USERNAME"] = str(raw["IMAP_USER"])
-    if raw.get("IMAP_PASS"):
-        result["IMAP_PASSWORD"] = str(raw["IMAP_PASS"])
-    if raw.get("IMAP_MAILBOX"):
-        result["IMAP_MAILBOX"] = str(raw["IMAP_MAILBOX"])
+    if raw.get(f"{prefix}IMAP_HOST"):
+        result["IMAP_HOST"] = str(raw[f"{prefix}IMAP_HOST"])
+    if raw.get(f"{prefix}IMAP_PORT"):
+        result["IMAP_PORT"] = str(raw[f"{prefix}IMAP_PORT"])
+    if raw.get(f"{prefix}IMAP_USER"):
+        result["IMAP_USERNAME"] = str(raw[f"{prefix}IMAP_USER"])
+    if raw.get(f"{prefix}IMAP_PASS"):
+        result["IMAP_PASSWORD"] = str(raw[f"{prefix}IMAP_PASS"])
+    if raw.get(f"{prefix}IMAP_MAILBOX"):
+        result["IMAP_MAILBOX"] = str(raw[f"{prefix}IMAP_MAILBOX"])
     return result
 
 
 def load_settings() -> Settings:
     load_dotenv()
     workspace_root = Path(__file__).resolve().parents[2]
-    external_imap_env = _load_external_imap_skill_env()
+    requested_account = os.getenv("IMAP_ACCOUNT")
+    external_imap_env = _load_external_imap_skill_env(requested_account)
 
     imap_host = os.getenv("IMAP_HOST") or external_imap_env.get("IMAP_HOST")
     imap_port = int(os.getenv("IMAP_PORT") or external_imap_env.get("IMAP_PORT") or "993")
@@ -68,4 +75,5 @@ def load_settings() -> Settings:
         log_level=os.getenv("LOG_LEVEL", "INFO"),
         workspace_root=workspace_root,
         config_source=config_source,
+        imap_account=requested_account,
     )
