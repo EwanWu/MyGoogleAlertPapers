@@ -6,6 +6,7 @@
 - Testing uses read-only IMAP access and peek semantics.
 - Scholar email parsing should be rule/template based first.
 - LLM usage is fallback-only.
+- Preferred interpreter target is Python 3.11, but the current machine may not expose a `python3.11` executable on PATH; bootstrap and local checks should use the available `python3` unless/until a stricter interpreter path is confirmed.
 
 ## Initial external resources to borrow from conceptually
 - IMAP read-only / BODY.PEEK workflows

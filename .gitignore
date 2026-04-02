@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+.venv/
+.env
+.pytest_cache/
+.mypy_cache/
+data/*.db
+data/**/*.db
+data/logs/*
+!data/logs/.gitkeep
+data/raw_mail_snapshots/*
+!data/raw_mail_snapshots/.gitkeep
+data/exports/*
+!data/exports/.gitkeep
+data/eval/*
+!data/eval/.gitkeep
