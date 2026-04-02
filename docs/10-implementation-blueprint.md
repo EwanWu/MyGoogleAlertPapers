@@ -99,9 +99,11 @@ Create SQLite schema.
 
 ### `mgap scan-mailbox`
 Scan mailbox in read-only mode and persist mail records/raw snapshots.
-Options:
+Current supported options:
 - `--limit`
 - `--unseen-only`
+
+Planned later options:
 - `--since`
 - `--uid-file`
 

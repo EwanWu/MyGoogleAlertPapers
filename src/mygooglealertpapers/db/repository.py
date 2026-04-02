@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from dataclasses import asdict
 from pathlib import Path
 
 from mygooglealertpapers.mail.candidate_extractor import PaperCandidateRaw
@@ -75,6 +74,21 @@ class Repository:
                 parsed_email.body_hash,
                 snapshot_path,
             ),
+        )
+
+    def update_mail_candidate_count(self, conn: sqlite3.Connection, *, mail_uid: str, num_candidates_extracted: int) -> None:
+        conn.execute(
+            """
+            UPDATE mail_ingestion_record
+            SET num_candidates_extracted = ?, parse_status = ?
+            WHERE id = (
+                SELECT id FROM mail_ingestion_record
+                WHERE mail_uid = ?
+                ORDER BY id DESC
+                LIMIT 1
+            )
+            """,
+            (num_candidates_extracted, "candidates_extracted", mail_uid),
         )
 
     def insert_paper_candidates(self, conn: sqlite3.Connection, candidates: list[PaperCandidateRaw]) -> None:

@@ -10,6 +10,15 @@ Deliverables:
 - SQLite schema bootstrap
 - structured logging
 
+### Phase 1.1: safe small-sample smoke-test readiness
+Deliverables:
+- `.env.example` for local setup
+- raw snapshot persistence to `data/raw_mail_snapshots/`
+- lightweight batch report command
+- improved candidate extraction beyond bare anchor fallback
+- candidate count write-back into mail_ingestion_record
+- basic self-checks/tests for detector and extractor
+
 ## Phase 2: normalization and enrichment
 Deliverables:
 - title/author normalization
