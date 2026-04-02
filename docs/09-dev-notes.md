@@ -22,6 +22,15 @@
 - Prefer conservative non-merge over speculative auto-merge.
 - Always log enough to estimate scale-up cost.
 - Reuse existing local credential stores when practical instead of duplicating email secrets across multiple project files.
+- For substantial validation runs, produce a structured results document in the repo.
+- Keep documents updated, but do not artificially suppress useful in-chat discussion during execution.
+- Planning, design, exploratory discussion, and execution updates should still be discussed fully with the user when helpful.
 
 ## Recommended next coding step
 Proceed from candidate extraction into metadata enrichment, using the existing normalization skeleton (title keys, canonical URLs, DOI/PMID/PMCID/arXiv extraction) as the handoff layer.
+
+- Batch-level timing should be tracked explicitly so full-run and per-stage wall-clock durations are reportable, not inferred only from provider latency.
+
+- Query-level caching is now a required optimization target; repeated DOI/title/provider lookups should not refetch identical requests unnecessarily.
+
+- Merge-side normalization should collapse superficial string differences before flagging provider conflicts.

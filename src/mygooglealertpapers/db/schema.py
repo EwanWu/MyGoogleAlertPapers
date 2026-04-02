@@ -5,6 +5,20 @@ from pathlib import Path
 
 
 SCHEMA_SQL = """
+
+CREATE TABLE IF NOT EXISTS batch_run (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id TEXT NOT NULL,
+    stage TEXT NOT NULL,
+    started_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    finished_at TEXT,
+    duration_ms INTEGER,
+    requested_limit INTEGER,
+    processed_count INTEGER,
+    status TEXT,
+    notes TEXT
+);
+
 CREATE TABLE IF NOT EXISTS mail_ingestion_record (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     mail_uid TEXT NOT NULL,
@@ -76,6 +90,16 @@ CREATE TABLE IF NOT EXISTS paper_candidate_normalized (
     normalized_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
+
+
+CREATE TABLE IF NOT EXISTS query_cache (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    provider TEXT NOT NULL,
+    query_type TEXT NOT NULL,
+    query_key TEXT NOT NULL,
+    response_json TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
 
 CREATE TABLE IF NOT EXISTS source_record (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

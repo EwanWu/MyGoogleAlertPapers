@@ -68,3 +68,9 @@ Deliverables:
 - candidate_paper_link scaffold
 - conservative matching cascade (DOI/PMID/PMCID/title-author-year)
 - dedup compression statistics
+
+## Phase 3.5 (in progress): cost/timing instrumentation
+Deliverables:
+- report-cost command
+- stage/provider latency summaries from cost_event
+- experiment reflection document

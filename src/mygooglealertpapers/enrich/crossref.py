@@ -5,10 +5,10 @@ import time
 import urllib.parse
 import urllib.request
 
-from mygooglealertpapers.enrich.base import EnrichmentRecord
+from mygooglealertpapers.enrich.base import EnrichmentRecord, accept_result
 
 
-def query_crossref(candidate_id: str, *, doi: str | None, title: str | None) -> EnrichmentRecord | None:
+def query_crossref(candidate_id: str, *, doi: str | None, title: str | None, first_author_family: str | None = None, venue_hint: str | None = None, query_year: str | None = None) -> EnrichmentRecord | None:
     start = time.perf_counter()
     if doi:
         url = f"https://api.crossref.org/works/{urllib.parse.quote(doi)}"
@@ -43,12 +43,15 @@ def query_crossref(candidate_id: str, *, doi: str | None, title: str | None) -> 
     date_parts = (((item.get("published-print") or item.get("published-online") or {}).get("date-parts") or [[None]])[0])
     if date_parts and date_parts[0]:
         year = str(date_parts[0])
+    matched_ok = True
+    if query_type == 'title':
+        matched_ok = accept_result(query_string, title_value, query_year, year, first_author_family, json.dumps(authors, ensure_ascii=False), venue_hint, (item.get('container-title') or [None])[0] if isinstance(item.get('container-title'), list) else item.get('container-title'))
     return EnrichmentRecord(
         candidate_id=candidate_id,
         source_name="crossref",
         query_type=query_type,
         query_string=query_string,
-        matched=True,
+        matched=matched_ok,
         match_score=1.0 if doi else None,
         external_id=item.get("DOI"),
         title=title_value,

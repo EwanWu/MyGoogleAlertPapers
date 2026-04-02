@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import time
+import uuid
 from pathlib import Path
 
 from mygooglealertpapers.config import Settings
@@ -40,6 +41,8 @@ def scan_and_store_messages(settings: Settings, *, limit: int, unseen_only: bool
 
     repo = Repository(settings.sqlite_path)
     tracker = CostTracker(repo, settings.sqlite_path)
+    run_id = 'scan_' + uuid.uuid4().hex[:12]
+    started_at = time.perf_counter()
     client = ImapMailboxClient(
         host=settings.imap_host,
         port=settings.imap_port,
@@ -52,6 +55,7 @@ def scan_and_store_messages(settings: Settings, *, limit: int, unseen_only: bool
         stubs = client.fetch_message_metadata(limit=limit, unseen_only=unseen_only)
         logger.info("Fetched %s message(s) from mailbox=%s unseen_only=%s", len(stubs), settings.imap_mailbox, unseen_only)
         with repo.connect() as conn:
+            repo.start_batch_run(conn, run_id=run_id, stage='scan', requested_limit=limit, notes=None)
             for stub in stubs:
                 started = time.perf_counter()
                 parsed = parse_raw_email(stub.raw_message)
@@ -74,6 +78,7 @@ def scan_and_store_messages(settings: Settings, *, limit: int, unseen_only: bool
                 )
                 repo.insert_raw_mail_snapshot(conn, mail_uid=stub.uid, parsed_email=parsed, snapshot_path=snapshot_path)
                 tracker.record_stage_cost(conn, stage="scan", status="ok", mail_uid=stub.uid, notes=detection.reason)
+            repo.finish_batch_run(conn, run_id=run_id, duration_ms=int((time.perf_counter()-started_at)*1000), processed_count=len(stubs), status='ok')
             conn.commit()
     finally:
         client.close()
@@ -82,7 +87,10 @@ def scan_and_store_messages(settings: Settings, *, limit: int, unseen_only: bool
 def parse_and_extract_candidates(settings: Settings, *, limit: int) -> None:
     repo = Repository(settings.sqlite_path)
     tracker = CostTracker(repo, settings.sqlite_path)
+    run_id = 'extract_candidates_' + uuid.uuid4().hex[:12]
+    started_at = time.perf_counter()
     with repo.connect() as conn:
+        repo.start_batch_run(conn, run_id=run_id, stage='extract_candidates', requested_limit=limit, notes=None)
         uids = repo.list_unparsed_scholar_mail_uids(conn, limit=limit)
         logger.info("Found %s unparsed Scholar mail(s)", len(uids))
         for uid in uids:
@@ -108,4 +116,5 @@ def parse_and_extract_candidates(settings: Settings, *, limit: int) -> None:
             else:
                 repo.update_mail_candidate_count(conn, mail_uid=uid, num_candidates_extracted=0)
                 tracker.record_stage_cost(conn, stage="extract_candidates", status="no_candidates", mail_uid=uid)
+        repo.finish_batch_run(conn, run_id=run_id, duration_ms=int((time.perf_counter()-started_at)*1000), processed_count=len(uids), status='ok')
         conn.commit()

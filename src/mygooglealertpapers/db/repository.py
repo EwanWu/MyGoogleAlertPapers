@@ -208,3 +208,36 @@ class Repository:
             (mail_uid,),
         ).fetchone()
         return None if row is None else (row[0], row[1])
+
+
+    def start_batch_run(self, conn: sqlite3.Connection, *, run_id: str, stage: str, requested_limit: int | None, notes: str | None = None) -> None:
+        conn.execute(
+            """
+            INSERT INTO batch_run (run_id, stage, requested_limit, status, notes)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (run_id, stage, requested_limit, 'running', notes),
+        )
+
+    def finish_batch_run(self, conn: sqlite3.Connection, *, run_id: str, duration_ms: int, processed_count: int, status: str, notes: str | None = None) -> None:
+        conn.execute(
+            """
+            UPDATE batch_run
+            SET finished_at = CURRENT_TIMESTAMP, duration_ms = ?, processed_count = ?, status = ?, notes = COALESCE(notes, '') || COALESCE(?, '')
+            WHERE run_id = ?
+            """,
+            (duration_ms, processed_count, status, notes, run_id),
+        )
+
+
+    def get_query_cache(self, conn: sqlite3.Connection, *, provider: str, query_type: str, query_key: str):
+        return conn.execute(
+            "SELECT response_json FROM query_cache WHERE provider = ? AND query_type = ? AND query_key = ? ORDER BY id DESC LIMIT 1",
+            (provider, query_type, query_key),
+        ).fetchone()
+
+    def put_query_cache(self, conn: sqlite3.Connection, *, provider: str, query_type: str, query_key: str, response_json: str) -> None:
+        conn.execute(
+            "INSERT INTO query_cache (provider, query_type, query_key, response_json) VALUES (?, ?, ?, ?)",
+            (provider, query_type, query_key, response_json),
+        )
