@@ -24,4 +24,4 @@
 - Reuse existing local credential stores when practical instead of duplicating email secrets across multiple project files.
 
 ## Recommended next coding step
-Implement the minimal skeleton described in `07-implementation-roadmap.md`.
+Proceed from candidate extraction into metadata enrichment, using the existing normalization skeleton (title keys, canonical URLs, DOI/PMID/PMCID/arXiv extraction) as the handoff layer.

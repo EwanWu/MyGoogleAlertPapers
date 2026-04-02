@@ -6,7 +6,9 @@ from mygooglealertpapers.config import load_settings
 from mygooglealertpapers.db.schema import create_schema_at_default_path
 from mygooglealertpapers.logging_utils import configure_logging
 from mygooglealertpapers.pipeline.ingest import parse_and_extract_candidates, scan_and_store_messages
+from mygooglealertpapers.pipeline.normalize import normalize_candidates
 from mygooglealertpapers.pipeline.report import build_batch_report
+from mygooglealertpapers.pipeline.stats import build_normalization_stats
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -22,7 +24,11 @@ def build_parser() -> argparse.ArgumentParser:
     parse_parser = subparsers.add_parser("parse-mails", help="Parse stored raw snapshots and extract candidates")
     parse_parser.add_argument("--limit", type=int, default=50)
 
+    normalize_parser = subparsers.add_parser("normalize-candidates", help="Normalize extracted candidates")
+    normalize_parser.add_argument("--limit", type=int, default=100)
+
     subparsers.add_parser("report-batch", help="Show a lightweight batch report")
+    subparsers.add_parser("report-normalization", help="Show normalization statistics")
 
     return parser
 
@@ -39,8 +45,12 @@ def main() -> None:
         scan_and_store_messages(settings, limit=args.limit, unseen_only=args.unseen_only)
     elif args.command == "parse-mails":
         parse_and_extract_candidates(settings, limit=args.limit)
+    elif args.command == "normalize-candidates":
+        normalize_candidates(settings, limit=args.limit)
     elif args.command == "report-batch":
         print(build_batch_report(settings.sqlite_path))
+    elif args.command == "report-normalization":
+        print(build_normalization_stats(settings.sqlite_path))
     else:
         parser.error(f"Unknown command: {args.command}")
 

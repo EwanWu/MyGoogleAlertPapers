@@ -20,6 +20,7 @@ Deliverables:
 - basic self-checks/tests for detector and extractor
 - multi-account test mailbox support via existing IMAP skill config
 - extractor v2 with Scholar URL unwrapping and snippet-derived venue/year hints
+- normalization skeleton for title keys, canonical URLs, and DOI/PMID/PMCID/arXiv extraction
 
 ## Phase 2: normalization and enrichment
 Deliverables:
