@@ -5,7 +5,7 @@ from urllib.parse import urlparse, parse_qs, unquote
 
 DOI_RE = re.compile(r"10\.\d{4,9}/[-._;()/:A-Z0-9]+", re.IGNORECASE)
 PMID_RE = re.compile(r"(?:pubmed\.ncbi\.nlm\.nih\.gov/|pmid[/:\s])(?P<pmid>\d{5,10})", re.IGNORECASE)
-PMCID_RE = re.compile(r"(?:pmc/articles/|pmcid[/:\s])(?P<pmcid>PMC\d+)", re.IGNORECASE)
+PMCID_RE = re.compile(r"(?:pmc(?:\.ncbi\.nlm\.nih\.gov)?/articles/|pmcid[/:\s])(?P<pmcid>PMC\d+)", re.IGNORECASE)
 ARXIV_RE = re.compile(r"arxiv\.org/(?:abs|pdf)/(?P<arxiv>[0-9]{4}\.[0-9]{4,5})(?:v\d+)?", re.IGNORECASE)
 
 
@@ -13,7 +13,7 @@ def extract_doi(text: str | None) -> str | None:
     if not text:
         return None
     m = DOI_RE.search(text)
-    return m.group(0).lower() if m else None
+    return clean_doi(m.group(0)) if m else None
 
 
 def extract_pmid(text: str | None) -> str | None:
@@ -49,7 +49,20 @@ def canonicalize_url(url: str | None) -> str | None:
         q = parse_qs(query)
         target = q.get("url", [None])[0]
         return unquote(target) if target else url
+    if "scholar.google." in netloc and parsed.path == "/scholar":
+        return f"{scheme}://{netloc}{path}"
     canonical = f"{scheme}://{netloc}{path}"
     if query and "scholar.google." not in netloc:
         canonical = f"{canonical}?{query}"
     return canonical
+
+
+def clean_doi(doi: str | None) -> str | None:
+    if not doi:
+        return None
+    value = doi.strip().lower()
+    for suffix in ['/full', '/abstract', '/pdf']:
+        if value.endswith(suffix):
+            value = value[: -len(suffix)]
+    value = value.rstrip(' .;,')
+    return value or None

@@ -15,6 +15,7 @@ from mygooglealertpapers.pipeline.dedup import deduplicate_candidates
 from mygooglealertpapers.pipeline.dedup_stats import build_dedup_stats
 from mygooglealertpapers.pipeline.report import build_batch_report
 from mygooglealertpapers.pipeline.stats import build_normalization_stats
+from mygooglealertpapers.pipeline.cost_stats import build_cost_stats
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -47,6 +48,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     subparsers.add_parser("report-merge", help="Show merged proposal statistics")
     subparsers.add_parser("report-dedup", help="Show dedup statistics")
+    subparsers.add_parser("report-cost", help="Show cost/timing statistics")
 
     return parser
 
@@ -81,6 +83,8 @@ def main() -> None:
         print(build_merge_stats(settings.sqlite_path))
     elif args.command == "report-dedup":
         print(build_dedup_stats(settings.sqlite_path))
+    elif args.command == "report-cost":
+        print(build_cost_stats(settings.sqlite_path))
     else:
         parser.error(f"Unknown command: {args.command}")
 

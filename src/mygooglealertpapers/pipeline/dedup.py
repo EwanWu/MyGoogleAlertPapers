@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 import uuid
 
 from mygooglealertpapers.config import Settings
@@ -18,7 +19,10 @@ def _new_paper_id() -> str:
 def deduplicate_candidates(settings: Settings, *, limit: int) -> None:
     repo = Repository(settings.sqlite_path)
     tracker = CostTracker(repo, settings.sqlite_path)
+    run_id = 'dedup_candidates_' + uuid.uuid4().hex[:12]
+    started_at = time.perf_counter()
     with repo.connect() as conn:
+        repo.start_batch_run(conn, run_id=run_id, stage='dedup_candidates', requested_limit=limit, notes=None)
         rows = conn.execute(
             """
             SELECT pcn.candidate_id, pcn.norm_title, pcn.norm_title_key, pcn.first_author_family,
@@ -146,4 +150,5 @@ def deduplicate_candidates(settings: Settings, *, limit: int) -> None:
                 ),
             )
             tracker.record_stage_cost(conn, stage='dedup_candidates', status='ok', candidate_id=candidate_id, notes=json.dumps(evidence, ensure_ascii=False))
+        repo.finish_batch_run(conn, run_id=run_id, duration_ms=int((time.perf_counter()-started_at)*1000), processed_count=len(rows), status='ok')
         conn.commit()

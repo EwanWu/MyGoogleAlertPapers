@@ -19,6 +19,8 @@ class Settings:
     workspace_root: Path
     config_source: str
     imap_account: str | None
+    crossref_mailto: str | None
+    openalex_email: str | None
 
 
 def _skill_env_path() -> Path:
@@ -76,4 +78,6 @@ def load_settings() -> Settings:
         workspace_root=workspace_root,
         config_source=config_source,
         imap_account=requested_account,
+        crossref_mailto=os.getenv('CROSSREF_MAILTO'),
+        openalex_email=os.getenv('OPENALEX_EMAIL'),
     )

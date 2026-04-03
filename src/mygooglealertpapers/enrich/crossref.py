@@ -8,14 +8,18 @@ import urllib.request
 from mygooglealertpapers.enrich.base import EnrichmentRecord, accept_result
 
 
-def query_crossref(candidate_id: str, *, doi: str | None, title: str | None, first_author_family: str | None = None, venue_hint: str | None = None, query_year: str | None = None) -> EnrichmentRecord | None:
+def query_crossref(candidate_id: str, *, doi: str | None, title: str | None, first_author_family: str | None = None, venue_hint: str | None = None, query_year: str | None = None, mailto: str | None = None) -> EnrichmentRecord | None:
     start = time.perf_counter()
     if doi:
         url = f"https://api.crossref.org/works/{urllib.parse.quote(doi)}"
+        if mailto:
+            url += f"?mailto={urllib.parse.quote(mailto)}"
         query_type = "doi"
         query_string = doi
     elif title:
         url = f"https://api.crossref.org/works?query.title={urllib.parse.quote(title)}&rows=1"
+        if mailto:
+            url += f"&mailto={urllib.parse.quote(mailto)}"
         query_type = "title"
         query_string = title
     else:

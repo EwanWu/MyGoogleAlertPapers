@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+import time
+import uuid
 import sqlite3
 
 from mygooglealertpapers.config import Settings
@@ -16,7 +18,10 @@ logger = logging.getLogger(__name__)
 def normalize_candidates(settings: Settings, *, limit: int) -> None:
     repo = Repository(settings.sqlite_path)
     tracker = CostTracker(repo, settings.sqlite_path)
+    run_id = 'normalize_candidates_' + uuid.uuid4().hex[:12]
+    started_at = time.perf_counter()
     with repo.connect() as conn:
+        repo.start_batch_run(conn, run_id=run_id, stage='normalize_candidates', requested_limit=limit, notes=None)
         rows = conn.execute(
             """
             SELECT pc.candidate_id, pc.raw_title, pc.raw_authors, pc.raw_link, pc.raw_snippet,
@@ -53,11 +58,12 @@ def normalize_candidates(settings: Settings, *, limit: int) -> None:
                     venue_guess,
                     extract_doi(combined_text),
                     extract_pmid(combined_text),
-                    extract_pmcid(combined_text),
+                    extract_pmcid(combined_text) or extract_pmcid(url_source),
                     extract_arxiv_id(combined_text),
                     canonicalize_url(url_source),
                     url_source if url_source and 'scholar.google.com/scholar?cluster=' in url_source else None,
                 ),
             )
             tracker.record_stage_cost(conn, stage="normalize_candidates", status="ok", candidate_id=candidate_id)
+        repo.finish_batch_run(conn, run_id=run_id, duration_ms=int((time.perf_counter()-started_at)*1000), processed_count=len(rows), status='ok')
         conn.commit()

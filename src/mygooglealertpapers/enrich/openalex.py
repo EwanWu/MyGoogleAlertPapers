@@ -36,3 +36,23 @@ def query_openalex(candidate_id: str, *, doi: str | None, title: str | None, fir
     if query_type == 'title':
         matched_ok = accept_result(query_string, item.get('display_name'), query_year, str(item.get('publication_year')) if item.get('publication_year') else None, first_author_family, json.dumps(authors, ensure_ascii=False), venue_hint, venue)
     return EnrichmentRecord(candidate_id, 'openalex', query_type, query_string, matched_ok, 1.0 if doi else None, item.get('id'), item.get('display_name'), json.dumps(authors, ensure_ascii=False), item.get('abstract_inverted_index') and json.dumps(item.get('abstract_inverted_index')), venue, str(item.get('publication_year')) if item.get('publication_year') else None, item.get('type'), (ids.get('doi') or '').replace('https://doi.org/', '') or None, (ids.get('pmid') or '').replace('https://pubmed.ncbi.nlm.nih.gov/', '').strip('/') or None, (ids.get('pmcid') or '').replace('https://www.ncbi.nlm.nih.gov/pmc/articles/', '').strip('/') or None, (item.get('primary_location') or {}).get('landing_page_url'), json.dumps(item, ensure_ascii=False), int((time.perf_counter()-start)*1000))
+
+
+
+def query_openalex_batch_by_doi(dois: list[str], *, email: str | None = None):
+    import json, urllib.parse, urllib.request
+    normalized = []
+    for d in dois:
+        if not d:
+            continue
+        val = d if d.startswith('https://doi.org/') else 'https://doi.org/' + d
+        normalized.append(val)
+    if not normalized:
+        return []
+    joined = '|'.join(urllib.parse.quote(x, safe=':/') for x in normalized[:50])
+    url = f"https://api.openalex.org/works?filter=doi:{joined}&per-page=100"
+    if email:
+        url += f"&email={urllib.parse.quote(email)}"
+    with urllib.request.urlopen(url, timeout=30) as resp:
+        payload = json.loads(resp.read().decode('utf-8'))
+    return payload.get('results', [])
