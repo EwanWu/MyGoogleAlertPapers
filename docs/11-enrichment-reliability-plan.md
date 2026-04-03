@@ -40,7 +40,26 @@ This document is based on:
 1. The end-to-end pipeline is functional on real mailbox data.
 2. Enrichment is the dominant runtime bottleneck by a large margin.
 3. Conflict exposure remains high and is still the main threat to conservative canonicalization.
-4. Cache exists and helps, but resumability is still too coarse.
+4. Cache exists and helps, but resumability was initially too coarse and required structural refactoring.
+
+### Package-1 implementation update (2026-04-03 evening)
+A first implementation pass for provider-level resumability has now been completed in code.
+
+Implemented:
+- new `candidate_enrichment_status` table with `(candidate_id, provider)` uniqueness
+- provider-level start/finish status updates in enrichment
+- rerun selection based on provider status instead of candidate-level `source_record` existence
+- lazy bootstrap from existing `source_record` rows for compatibility
+- explicit provider outcomes recorded as `ok` / `no_match` / `error`
+- OpenAlex DOI batch path integrated into the new status model
+
+Validated so far on small real-mailbox slices:
+- normal rerun after a completed 10-mail slice produced `0 need work`
+- provider-level status rows were created for all planned provider intents
+- kill/interruption testing showed database consistency was preserved (no corrupt partial state)
+
+Current limitation after Package 1 first pass:
+- interruption before transaction commit can still roll back the whole in-flight enrichment transaction, so provider-level *selection* resumability is implemented, but the system does not yet guarantee finest-grained durable checkpointing after a hard kill.
 
 ---
 

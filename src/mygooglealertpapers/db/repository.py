@@ -241,3 +241,80 @@ class Repository:
             "INSERT INTO query_cache (provider, query_type, query_key, response_json) VALUES (?, ?, ?, ?)",
             (provider, query_type, query_key, response_json),
         )
+
+    def get_enrichment_status(self, conn: sqlite3.Connection, *, candidate_id: str, provider: str):
+        return conn.execute(
+            '''
+            SELECT id, status, query_type, query_key, source_record_id, cache_hit, attempt_count,
+                   last_started_at, last_finished_at, latency_ms, error_summary, notes
+            FROM candidate_enrichment_status
+            WHERE candidate_id = ? AND provider = ?
+            LIMIT 1
+            ''',
+            (candidate_id, provider),
+        ).fetchone()
+
+    def start_enrichment_status(self, conn: sqlite3.Connection, *, candidate_id: str, provider: str, query_type: str | None, query_key: str | None, notes: str | None = None) -> None:
+        conn.execute(
+            '''
+            INSERT INTO candidate_enrichment_status (
+                candidate_id, provider, status, query_type, query_key, cache_hit,
+                attempt_count, last_started_at, notes, updated_at
+            ) VALUES (?, ?, 'pending', ?, ?, 0, 1, CURRENT_TIMESTAMP, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(candidate_id, provider) DO UPDATE SET
+                status='pending',
+                query_type=excluded.query_type,
+                query_key=excluded.query_key,
+                attempt_count=candidate_enrichment_status.attempt_count + 1,
+                last_started_at=CURRENT_TIMESTAMP,
+                notes=excluded.notes,
+                updated_at=CURRENT_TIMESTAMP
+            ''',
+            (candidate_id, provider, query_type, query_key, notes),
+        )
+
+    def finish_enrichment_status(self, conn: sqlite3.Connection, *, candidate_id: str, provider: str, status: str, source_record_id: int | None = None, cache_hit: bool = False, latency_ms: int | None = None, error_summary: str | None = None, notes: str | None = None) -> None:
+        conn.execute(
+            '''
+            UPDATE candidate_enrichment_status
+            SET status = ?,
+                source_record_id = ?,
+                cache_hit = ?,
+                last_finished_at = CURRENT_TIMESTAMP,
+                latency_ms = ?,
+                error_summary = ?,
+                notes = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE candidate_id = ? AND provider = ?
+            ''',
+            (status, source_record_id, int(cache_hit), latency_ms, error_summary, notes, candidate_id, provider),
+        )
+
+    def existing_source_record_for_provider(self, conn: sqlite3.Connection, *, candidate_id: str, provider: str):
+        return conn.execute(
+            '''
+            SELECT id, matched
+            FROM source_record
+            WHERE candidate_id = ? AND source_name = ?
+            ORDER BY id DESC
+            LIMIT 1
+            ''',
+            (candidate_id, provider),
+        ).fetchone()
+
+    def bootstrap_enrichment_status_from_source_record(self, conn: sqlite3.Connection, *, candidate_id: str, provider: str) -> None:
+        existing = self.existing_source_record_for_provider(conn, candidate_id=candidate_id, provider=provider)
+        if existing is None:
+            return
+        source_record_id, matched = existing
+        status = 'ok' if matched else 'no_match'
+        conn.execute(
+            '''
+            INSERT INTO candidate_enrichment_status (
+                candidate_id, provider, status, source_record_id, cache_hit,
+                attempt_count, last_started_at, last_finished_at, updated_at
+            ) VALUES (?, ?, ?, ?, 0, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            ON CONFLICT(candidate_id, provider) DO NOTHING
+            ''',
+            (candidate_id, provider, status, source_record_id),
+        )

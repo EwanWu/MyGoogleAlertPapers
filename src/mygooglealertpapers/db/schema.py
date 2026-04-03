@@ -125,6 +125,28 @@ CREATE TABLE IF NOT EXISTS source_record (
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS candidate_enrichment_status (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    candidate_id TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    status TEXT NOT NULL,
+    query_type TEXT,
+    query_key TEXT,
+    source_record_id INTEGER,
+    cache_hit INTEGER DEFAULT 0,
+    attempt_count INTEGER DEFAULT 0,
+    last_started_at TEXT,
+    last_finished_at TEXT,
+    latency_ms INTEGER,
+    error_summary TEXT,
+    notes TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_candidate_enrichment_status_candidate_provider
+ON candidate_enrichment_status(candidate_id, provider);
+
 
 CREATE TABLE IF NOT EXISTS merged_metadata_proposal (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

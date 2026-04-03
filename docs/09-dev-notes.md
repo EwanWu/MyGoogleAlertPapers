@@ -33,7 +33,8 @@ Proceed from candidate extraction into metadata enrichment, using the existing n
 
 - Query-level caching is now a required optimization target; repeated DOI/title/provider lookups should not refetch identical requests unnecessarily.
 - The next hardening step is to make cache keys canonical and enforce stronger uniqueness/authoritativeness so repeated provider queries do not accumulate duplicate cache rows.
-- Candidate-level enrichment completion is too coarse for interrupted runs; the next implementation pass should introduce provider-level enrichment progress tracking so reruns can resume missing provider work instead of skipping partially enriched candidates.
+- Candidate-level enrichment completion is too coarse for interrupted runs; provider-level enrichment progress tracking has now been introduced in the first Package-1 implementation pass so reruns can select work by provider status rather than by candidate-level `source_record` existence.
+- Remaining limitation after the first pass: transaction durability is still coarser than ideal under hard-kill interruption, so future refinement may still be needed if provider-level checkpoint persistence must survive mid-run process termination more granularly.
 
 - Merge-side normalization should collapse superficial string differences before flagging provider conflicts.
 - Merge conflict handling should be upgraded from a simple conflict-count heuristic to graded conflict classes, with DOI/PMID disagreement treated as severe and blocked from confident canonicalization.
