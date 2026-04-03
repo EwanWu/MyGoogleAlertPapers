@@ -61,6 +61,25 @@ Validated so far on small real-mailbox slices:
 Current limitation after Package 1 first pass:
 - interruption before transaction commit can still roll back the whole in-flight enrichment transaction, so provider-level *selection* resumability is implemented, but the system does not yet guarantee finest-grained durable checkpointing after a hard kill.
 
+### Package-2 first-pass update (2026-04-03 night)
+A first cache-hardening pass has now also been implemented in code.
+
+Implemented:
+- unique cache identity at `(provider, query_type, query_key)`
+- upsert-based cache writes instead of append-only insertion
+- shared canonical query-key handling in enrichment paths
+- structured cached payloads for `matched`, `no_match`, and code-path support for `error`
+
+Validated so far on a fresh 10-mail `issac` slice:
+- duplicate cache-key count dropped to `0`
+- cache row count remained stable across rerun (`33 -> 33`)
+- rerun remained fast (`~0.12 s`) with no planned provider work
+- cache now stores structured no-match payloads rather than only successful lookup results
+
+Current remaining limitation after Package 2 first pass:
+- error-path caching logic exists but still needs stronger real-run validation
+- cache authority is improved, but correctness risks from title-fallback acceptance and merge conflict grading still remain for later packages
+
 ---
 
 ## 2. Main problems identified

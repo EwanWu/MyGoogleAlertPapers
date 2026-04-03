@@ -34,11 +34,17 @@ class ProviderIntent:
 def _canonical_query_key(query_type: str, value: str | None) -> str:
     if not value:
         return ''
+    text = value.strip()
     if query_type in {'doi', 'doi_batch'}:
-        return value.strip().lower()
+        text = text.lower()
+        if text.startswith('https://doi.org/'):
+            text = text[len('https://doi.org/'):]
+        return text
     if query_type in {'pmid', 'pmcid'}:
-        return value.strip()
-    return value.strip()
+        return text
+    if query_type == 'title':
+        return ' '.join(text.split())
+    return text
 
 
 def _build_provider_intents(row) -> list[ProviderIntent]:
@@ -248,13 +254,60 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
                 else:
                     rec = None
             except Exception as exc:
+                from mygooglealertpapers.enrich.base import EnrichmentRecord
+                rec = EnrichmentRecord(
+                    candidate_id=intent.candidate_id,
+                    source_name=intent.provider,
+                    query_type=intent.query_type,
+                    query_string=intent.query_key,
+                    matched=False,
+                    match_score=None,
+                    external_id=None,
+                    title=None,
+                    authors_json=None,
+                    abstract=None,
+                    venue=None,
+                    year=None,
+                    publication_type=None,
+                    doi=intent.doi if intent.query_type == 'doi' else None,
+                    pmid=intent.pmid if intent.query_type == 'pmid' else None,
+                    pmcid=None,
+                    url=None,
+                    raw_payload_json=json.dumps({'status': 'error', 'provider': intent.provider, 'error': str(exc)}, ensure_ascii=False),
+                    latency_ms=0,
+                )
+                repo.put_query_cache(conn, provider=intent.provider, query_type=intent.query_type, query_key=intent.query_key, response_json=enrichment_record_to_json(rec))
                 repo.finish_enrichment_status(conn, candidate_id=intent.candidate_id, provider=intent.provider, status='error', latency_ms=0, error_summary=str(exc))
                 tracker.record_stage_cost(conn, stage='enrich_candidates', status='error', candidate_id=intent.candidate_id, provider=intent.provider, latency_ms=0, notes=str(exc))
                 processed_intents += 1
                 continue
 
             if rec is None:
-                repo.finish_enrichment_status(conn, candidate_id=intent.candidate_id, provider=intent.provider, status='no_match', latency_ms=0, notes='no_record_returned')
+                from mygooglealertpapers.enrich.base import EnrichmentRecord
+                rec = EnrichmentRecord(
+                    candidate_id=intent.candidate_id,
+                    source_name=intent.provider,
+                    query_type=intent.query_type,
+                    query_string=intent.query_key,
+                    matched=False,
+                    match_score=None,
+                    external_id=None,
+                    title=None,
+                    authors_json=None,
+                    abstract=None,
+                    venue=None,
+                    year=None,
+                    publication_type=None,
+                    doi=intent.doi if intent.query_type == 'doi' else None,
+                    pmid=intent.pmid if intent.query_type == 'pmid' else None,
+                    pmcid=None,
+                    url=None,
+                    raw_payload_json=json.dumps({'status': 'no_match', 'provider': intent.provider, 'query_key': intent.query_key}, ensure_ascii=False),
+                    latency_ms=0,
+                )
+                repo.put_query_cache(conn, provider=intent.provider, query_type=intent.query_type, query_key=intent.query_key, response_json=enrichment_record_to_json(rec))
+                source_record_id = _insert_source_record(repo, conn, rec)
+                repo.finish_enrichment_status(conn, candidate_id=intent.candidate_id, provider=intent.provider, status='no_match', source_record_id=source_record_id, latency_ms=0, notes='no_record_returned')
                 tracker.record_stage_cost(conn, stage='enrich_candidates', status='no_match', candidate_id=intent.candidate_id, provider=intent.provider, latency_ms=0, notes='no_record_returned')
                 processed_intents += 1
                 continue

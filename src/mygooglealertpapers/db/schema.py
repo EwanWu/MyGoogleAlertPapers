@@ -101,6 +101,9 @@ CREATE TABLE IF NOT EXISTS query_cache (
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE UNIQUE INDEX IF NOT EXISTS idx_query_cache_provider_type_key
+ON query_cache(provider, query_type, query_key);
+
 CREATE TABLE IF NOT EXISTS source_record (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     candidate_id TEXT NOT NULL,

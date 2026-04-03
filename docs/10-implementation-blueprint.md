@@ -218,3 +218,37 @@ No external scholarly API registration is required to start the mailbox, parser,
 
 ## Documentation maintenance rule
 When architecture, schema, pipeline behavior, or constraints change during implementation, update the relevant docs in `docs/` in the same work cycle whenever practical.
+
+## Current implementation state update (2026-04-03)
+The project is no longer only a skeleton.
+It now includes:
+- a working mailbox → candidate → normalize → enrich → merge → dedup pipeline
+- batch timing and cost reporting
+- provider request shaping improvements such as Crossref `mailto` support and OpenAlex DOI batching helper
+- a first Package-1 implementation pass for provider-level enrichment resumability
+
+### What Package 1 first pass now provides
+- `candidate_enrichment_status` table for provider-level progress
+- provider-intent planning in enrichment instead of candidate-level coarse completion logic
+- explicit provider outcomes (`ok`, `no_match`, `error`)
+- rerun selection based on provider status
+- compatibility bootstrapping from existing `source_record` data
+
+### Current limitation after Package 1 first pass
+The system is now structurally resumable at provider-selection level, but not yet a finest-grained durable checkpoint system under hard-kill interruption; an in-flight transaction may still roll back before partial provider work is durably committed.
+
+### Recommended next implementation focus
+1. complete and consolidate query-cache authority and uniqueness semantics
+2. decide whether finer transaction/checkpoint durability is needed beyond the current provider-selection resumability model
+3. strengthen title-fallback acceptance and merge-side conflict grading
+4. improve normalization/detail cleanup (including HTML residue and stronger title/venue harmonization)
+5. only then expand more aggressive optimization or scale-up runs
+
+### Package 2 first-pass state update (2026-04-03 night)
+The first cache-hardening pass has been validated on a small fresh `issac` slice.
+Observed results:
+- duplicate cache keys dropped to zero on the tested run
+- cache row counts remained stable across rerun
+- rerun latency remained very low when no provider work remained
+
+This supports continuing with cache-focused consolidation before moving into deeper correctness work.

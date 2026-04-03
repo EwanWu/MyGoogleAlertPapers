@@ -238,7 +238,13 @@ class Repository:
 
     def put_query_cache(self, conn: sqlite3.Connection, *, provider: str, query_type: str, query_key: str, response_json: str) -> None:
         conn.execute(
-            "INSERT INTO query_cache (provider, query_type, query_key, response_json) VALUES (?, ?, ?, ?)",
+            '''
+            INSERT INTO query_cache (provider, query_type, query_key, response_json)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(provider, query_type, query_key) DO UPDATE SET
+                response_json = excluded.response_json,
+                created_at = CURRENT_TIMESTAMP
+            ''',
             (provider, query_type, query_key, response_json),
         )
 
