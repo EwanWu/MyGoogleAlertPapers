@@ -74,3 +74,20 @@ Deliverables:
 - report-cost command
 - stage/provider latency summaries from cost_event
 - experiment reflection document
+
+## Phase 3.6 (planned next): enrichment reliability hardening
+Deliverables:
+- provider-level enrichment status tracking for true checkpoint/resume behavior
+- normalized and deduplicated query-cache keys with stronger reuse guarantees
+- safer partial-rerun behavior after interruption or provider failure
+- stricter title-fallback acceptance rules
+- merge conflict grading that distinguishes superficial formatting differences from severe DOI/PMID/content disagreement
+- canonicalization guardrails for severe-conflict proposals
+
+## Immediate implementation priority
+Do not widen scope first.
+Before adding more providers or larger-scale runs, harden:
+1. resumability
+2. cache authority and duplicate-request prevention
+3. title-based match conservatism
+4. severe-conflict protection before canonicalization

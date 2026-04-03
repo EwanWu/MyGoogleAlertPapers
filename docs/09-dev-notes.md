@@ -32,5 +32,9 @@ Proceed from candidate extraction into metadata enrichment, using the existing n
 - Batch-level timing should be tracked explicitly so full-run and per-stage wall-clock durations are reportable, not inferred only from provider latency.
 
 - Query-level caching is now a required optimization target; repeated DOI/title/provider lookups should not refetch identical requests unnecessarily.
+- The next hardening step is to make cache keys canonical and enforce stronger uniqueness/authoritativeness so repeated provider queries do not accumulate duplicate cache rows.
+- Candidate-level enrichment completion is too coarse for interrupted runs; the next implementation pass should introduce provider-level enrichment progress tracking so reruns can resume missing provider work instead of skipping partially enriched candidates.
 
 - Merge-side normalization should collapse superficial string differences before flagging provider conflicts.
+- Merge conflict handling should be upgraded from a simple conflict-count heuristic to graded conflict classes, with DOI/PMID disagreement treated as severe and blocked from confident canonicalization.
+- Title-based fallback remains the main correctness risk in enrichment; acceptance should be tightened using stronger combined evidence from title, year, first-author family, and venue.
