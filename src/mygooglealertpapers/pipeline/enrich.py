@@ -13,6 +13,7 @@ from mygooglealertpapers.enrich.base import enrichment_record_from_json, enrichm
 from mygooglealertpapers.enrich.crossref import query_crossref
 from mygooglealertpapers.enrich.openalex import query_openalex, query_openalex_batch_by_doi
 from mygooglealertpapers.enrich.pubmed import query_pubmed
+from mygooglealertpapers.enrich.semanticscholar import query_semanticscholar
 
 logger = logging.getLogger(__name__)
 
@@ -50,11 +51,14 @@ def _canonical_query_key(query_type: str, value: str | None) -> str:
 def _build_provider_intents(row) -> list[ProviderIntent]:
     candidate_id, norm_title, doi, pmid, first_author_family, venue_guess, year_guess = row
     intents: list[ProviderIntent] = []
-    if pmid or norm_title:
-        query_type = 'pmid' if pmid else 'title'
-        query_key = _canonical_query_key(query_type, pmid or norm_title)
+    if norm_title or doi:
+        query_type = 'doi' if doi else 'title'
+        query_key = _canonical_query_key(query_type, doi or norm_title)
         intents.append(
-            ProviderIntent(candidate_id, 'pubmed', query_type, query_key, norm_title, doi, pmid, first_author_family, venue_guess, year_guess)
+            ProviderIntent(candidate_id, 'pubmed', 'pmid' if pmid else 'title', _canonical_query_key('pmid' if pmid else 'title', pmid or norm_title), norm_title, doi, pmid, first_author_family, venue_guess, year_guess)
+        )
+        intents.append(
+            ProviderIntent(candidate_id, 'semanticscholar', query_type, query_key, norm_title, doi, pmid, first_author_family, venue_guess, year_guess)
         )
     if doi or norm_title:
         query_type = 'doi' if doi else 'title'
@@ -246,7 +250,9 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
 
             try:
                 if intent.provider == 'pubmed':
-                    rec = query_pubmed(intent.candidate_id, pmid=intent.pmid, title=intent.norm_title, first_author_family=intent.first_author_family, venue_hint=intent.venue_guess, query_year=intent.year_guess)
+                    rec = query_pubmed(intent.candidate_id, pmid=intent.pmid, title=intent.norm_title, first_author_family=intent.first_author_family, venue_hint=intent.venue_guess, query_year=intent.year_guess, candidate_doi=intent.doi)
+                elif intent.provider == 'semanticscholar':
+                    rec = query_semanticscholar(intent.candidate_id, doi=intent.doi, title=intent.norm_title, first_author_family=intent.first_author_family, venue_hint=intent.venue_guess, query_year=intent.year_guess, api_key=settings.semantic_scholar_api_key)
                 elif intent.provider == 'crossref':
                     rec = query_crossref(intent.candidate_id, doi=intent.doi, title=intent.norm_title, first_author_family=intent.first_author_family, venue_hint=intent.venue_guess, query_year=intent.year_guess, mailto=settings.crossref_mailto)
                 elif intent.provider == 'openalex':

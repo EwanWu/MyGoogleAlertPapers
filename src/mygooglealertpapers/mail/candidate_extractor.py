@@ -59,7 +59,7 @@ def _unwrap_scholar_url(href: str | None) -> tuple[str | None, str | None]:
     return href, href
 
 
-def _extract_resource_type(title: str | None) -> tuple[str | None, str | None]:
+def _infer_resource_type(title: str | None, target_url: str | None) -> tuple[str | None, str | None]:
     title = _clean_text(title)
     if not title:
         return None, None
@@ -68,6 +68,12 @@ def _extract_resource_type(title: str | None) -> tuple[str | None, str | None]:
         if lowered.startswith(prefix):
             stripped = _clean_text(title[len(prefix):])
             return resource_type, stripped
+    if target_url:
+        url_lower = target_url.casefold()
+        if url_lower.endswith('.pdf') or '/pdf/' in url_lower or url_lower.endswith('/full.pdf'):
+            return 'pdf', title
+        if '/article/' in url_lower or '/abs/' in url_lower or '/abstract' in url_lower or '/full/' in url_lower:
+            return 'html', title
     return None, title
 
 
@@ -78,13 +84,13 @@ def _looks_like_title(text: str | None) -> bool:
         return False
     lowered = text.casefold()
     reject_hints = [
-        "view all",
-        "my profile",
-        "google scholar",
-        "alert",
-        "unsubscribe",
-        "view it on google scholar",
-        "edit this alert",
+        'view all',
+        'my profile',
+        'google scholar',
+        'alert',
+        'unsubscribe',
+        'view it on google scholar',
+        'edit this alert',
     ]
     return not any(h in lowered for h in reject_hints)
 
@@ -96,17 +102,20 @@ def _parse_snippet(snippet: str | None) -> tuple[str | None, str | None, str | N
     authors_raw = None
     venue_guess = None
     year_guess = None
-    if " - " in snippet:
-        left, right = snippet.split(" - ", 1)
+    if ' - ' in snippet:
+        left, right = snippet.split(' - ', 1)
         authors_raw = _clean_text(left)
         right = _clean_text(right)
         if right:
-            venue_guess = right
-            if "," in right:
-                maybe_year = _clean_text(right.rsplit(",", 1)[-1])
-                if maybe_year and maybe_year.isdigit() and len(maybe_year) == 4:
-                    year_guess = maybe_year
-                    venue_guess = _clean_text(right.rsplit(",", 1)[0])
+            if right.isdigit() and len(right) == 4:
+                year_guess = right
+            else:
+                venue_guess = right
+                if ',' in right:
+                    maybe_year = _clean_text(right.rsplit(',', 1)[-1])
+                    if maybe_year and maybe_year.isdigit() and len(maybe_year) == 4:
+                        year_guess = maybe_year
+                        venue_guess = _clean_text(right.rsplit(',', 1)[0])
     return authors_raw, venue_guess, year_guess
 
 
@@ -115,14 +124,14 @@ def extract_candidates(parsed_email: ParsedEmail, mail_uid: str) -> list[PaperCa
     if not parsed_email.body_html:
         return candidates
 
-    soup = BeautifulSoup(parsed_email.body_html, "html.parser")
+    soup = BeautifulSoup(parsed_email.body_html, 'html.parser')
     seen_titles: set[str] = set()
     idx = 0
 
-    for link in soup.find_all("a", href=True):
-        title = _clean_text(link.get_text(" ", strip=True))
-        wrapper_url, target_url = _unwrap_scholar_url(link.get("href"))
-        resource_type_hint, clean_title = _extract_resource_type(title)
+    for link in soup.find_all('a', href=True):
+        title = _clean_text(link.get_text(' ', strip=True))
+        wrapper_url, target_url = _unwrap_scholar_url(link.get('href'))
+        resource_type_hint, clean_title = _infer_resource_type(title, target_url)
         if not _looks_like_title(clean_title):
             continue
         if not target_url:
@@ -136,10 +145,10 @@ def extract_candidates(parsed_email: ParsedEmail, mail_uid: str) -> list[PaperCa
         snippet_text = None
         parent = link.parent
         if parent is not None:
-            context_line = _clean_text(parent.get_text(" ", strip=True))
+            context_line = _clean_text(parent.get_text(' ', strip=True))
             next_sibling = parent.find_next_sibling()
             if next_sibling is not None:
-                snippet_text = _clean_text(next_sibling.get_text(" ", strip=True))
+                snippet_text = _clean_text(next_sibling.get_text(' ', strip=True))
 
         authors_raw, venue_guess, year_guess = _parse_snippet(snippet_text)
 
@@ -154,9 +163,9 @@ def extract_candidates(parsed_email: ParsedEmail, mail_uid: str) -> list[PaperCa
                 raw_source_text=context_line,
                 raw_link=target_url,
                 raw_snippet=snippet_text,
-                parser_confidence=0.68,
-                template_variant="html_anchor_context_v2",
-                extraction_notes="Title/link from anchor with Scholar URL unwrapping and snippet parsing.",
+                parser_confidence=0.72,
+                template_variant='html_anchor_context_v3',
+                extraction_notes='Title/link from anchor with Scholar URL unwrapping, resource-type inference, and safer snippet parsing.',
                 scholar_wrapper_url=wrapper_url,
                 target_url=target_url,
                 resource_type_hint=resource_type_hint,

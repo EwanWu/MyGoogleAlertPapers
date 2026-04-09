@@ -21,6 +21,7 @@ class Settings:
     imap_account: str | None
     crossref_mailto: str | None
     openalex_email: str | None
+    semantic_scholar_api_key: str | None
 
 
 def _skill_env_path() -> Path:
@@ -80,4 +81,5 @@ def load_settings() -> Settings:
         imap_account=requested_account,
         crossref_mailto=os.getenv('CROSSREF_MAILTO'),
         openalex_email=os.getenv('OPENALEX_EMAIL'),
+        semantic_scholar_api_key=os.getenv('SEMANTIC_SCHOLAR_API_KEY'),
     )

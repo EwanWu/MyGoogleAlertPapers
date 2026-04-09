@@ -34,7 +34,7 @@ def query_openalex(candidate_id: str, *, doi: str | None, title: str | None, fir
     ids = item.get('ids') or {}
     matched_ok = True
     if query_type == 'title':
-        matched_ok = accept_result(query_string, item.get('display_name'), query_year, str(item.get('publication_year')) if item.get('publication_year') else None, first_author_family, json.dumps(authors, ensure_ascii=False), venue_hint, venue)
+        matched_ok = accept_result(query_string, item.get('display_name'), query_year, str(item.get('publication_year')) if item.get('publication_year') else None, first_author_family, json.dumps(authors, ensure_ascii=False), venue_hint, venue, candidate_doi=doi, provider_doi=(ids.get('doi') or '').replace('https://doi.org/', '') or None, provider_name='openalex')
     return EnrichmentRecord(candidate_id, 'openalex', query_type, query_string, matched_ok, 1.0 if doi else None, item.get('id'), item.get('display_name'), json.dumps(authors, ensure_ascii=False), item.get('abstract_inverted_index') and json.dumps(item.get('abstract_inverted_index')), venue, str(item.get('publication_year')) if item.get('publication_year') else None, item.get('type'), (ids.get('doi') or '').replace('https://doi.org/', '') or None, (ids.get('pmid') or '').replace('https://pubmed.ncbi.nlm.nih.gov/', '').strip('/') or None, (ids.get('pmcid') or '').replace('https://www.ncbi.nlm.nih.gov/pmc/articles/', '').strip('/') or None, (item.get('primary_location') or {}).get('landing_page_url'), json.dumps(item, ensure_ascii=False), int((time.perf_counter()-start)*1000))
 
 

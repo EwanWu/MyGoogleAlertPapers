@@ -49,7 +49,7 @@ def query_crossref(candidate_id: str, *, doi: str | None, title: str | None, fir
         year = str(date_parts[0])
     matched_ok = True
     if query_type == 'title':
-        matched_ok = accept_result(query_string, title_value, query_year, year, first_author_family, json.dumps(authors, ensure_ascii=False), venue_hint, (item.get('container-title') or [None])[0] if isinstance(item.get('container-title'), list) else item.get('container-title'))
+        matched_ok = accept_result(query_string, title_value, query_year, year, first_author_family, json.dumps(authors, ensure_ascii=False), venue_hint, (item.get('container-title') or [None])[0] if isinstance(item.get('container-title'), list) else item.get('container-title'), candidate_doi=doi, provider_doi=item.get('DOI'), provider_name='crossref')
     return EnrichmentRecord(
         candidate_id=candidate_id,
         source_name="crossref",

@@ -9,7 +9,7 @@ import xml.etree.ElementTree as ET
 from mygooglealertpapers.enrich.base import EnrichmentRecord, accept_result
 
 
-def query_pubmed(candidate_id: str, *, pmid: str | None, title: str | None, first_author_family: str | None = None, venue_hint: str | None = None, query_year: str | None = None) -> EnrichmentRecord | None:
+def query_pubmed(candidate_id: str, *, pmid: str | None, title: str | None, first_author_family: str | None = None, venue_hint: str | None = None, query_year: str | None = None, candidate_doi: str | None = None) -> EnrichmentRecord | None:
     start = time.perf_counter()
     query_type = None
     query_string = None
@@ -59,7 +59,7 @@ def query_pubmed(candidate_id: str, *, pmid: str | None, title: str | None, firs
                 pmcid = aid.text.upper()
         matched_ok = True
         if query_type == 'title':
-            matched_ok = accept_result(query_string, title_value, query_year, year, first_author_family, json.dumps(authors, ensure_ascii=False), venue_hint, venue)
+            matched_ok = accept_result(query_string, title_value, query_year, year, first_author_family, json.dumps(authors, ensure_ascii=False), venue_hint, venue, candidate_doi=candidate_doi, provider_doi=doi, provider_name='pubmed')
         return EnrichmentRecord(candidate_id, 'pubmed', query_type, query_string, matched_ok, 1.0 if query_type == 'pmid' else None, pmid, title_value, json.dumps(authors, ensure_ascii=False), abstract, venue, year, 'journal-article', doi, pmid, pmcid, f'https://pubmed.ncbi.nlm.nih.gov/{pmid}/' if pmid else None, json.dumps({'xml': xml_text}), int((time.perf_counter()-start)*1000))
     except Exception as e:
         return EnrichmentRecord(candidate_id, 'pubmed', query_type or 'unknown', query_string or '', False, None, None, None, None, None, None, None, None, None, pmid, None, None, json.dumps({'error': str(e)}), int((time.perf_counter()-start)*1000))
