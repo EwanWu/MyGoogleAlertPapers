@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import html
 import json
 import logging
+import re
 import time
 import uuid
-import sqlite3
-from collections import Counter, defaultdict
+from difflib import SequenceMatcher
+from unicodedata import normalize as unicode_normalize
+from urllib.parse import urlparse
 
 from mygooglealertpapers.config import Settings
 from mygooglealertpapers.cost.tracker import CostTracker
@@ -14,52 +17,316 @@ from mygooglealertpapers.db.repository import Repository
 logger = logging.getLogger(__name__)
 
 SOURCE_PRIORITY = {
-    'pubmed': 3,
-    'crossref': 2,
-    'openalex': 1,
+    'crossref': 4,
+    'openalex': 3,
+    'semanticscholar': 2,
+    'pubmed': 1,
 }
+
+GRADE_ORDER = {'A': 1, 'B': 2, 'C': 3}
+BLOCKING_GRADE_C_FIELDS = {'doi', 'pmid', 'pmcid', 'title'}
+
+
+def _clean_text(value: str | None) -> str | None:
+    if not value:
+        return None
+    text = html.unescape(str(value))
+    text = re.sub(r'<[^>]+>', ' ', text)
+    text = unicode_normalize('NFKC', text)
+    text = text.replace('–', '-').replace('—', '-').replace('−', '-')
+    text = text.replace('“', '"').replace('”', '"').replace('’', "'")
+    text = re.sub(r'\s+', ' ', text).strip()
+    return text or None
 
 
 def _normalize_conflict_value(field: str, value: str | None) -> str | None:
-    if not value:
+    text = _clean_text(value)
+    if not text:
         return None
-    normalized = str(value).strip()
     if field in {'title', 'venue'}:
-        normalized = normalized.casefold()
-        normalized = normalized.replace('–', '-').replace('—', '-')
-        normalized = normalized.replace('&amp;', '&')
-        normalized = normalized.rstrip(' .')
-    if field in {'doi'}:
-        normalized = normalized.casefold().rstrip(' ./')
-    return normalized or None
+        text = text.casefold().rstrip(' .')
+    elif field == 'doi':
+        text = text.casefold().strip()
+        if text.startswith('https://doi.org/'):
+            text = text[len('https://doi.org/'):]
+        text = text.rstrip(' ./')
+    elif field in {'pmid', 'pmcid'}:
+        text = text.strip().upper() if field == 'pmcid' else text.strip()
+    elif field == 'year':
+        text = text.strip()
+    return text or None
+
+
+def _comparison_text(value: str | None) -> str:
+    text = _clean_text(value) or ''
+    text = text.casefold()
+    text = re.sub(r'[^\w\s]', ' ', text)
+    text = re.sub(r'\s+', ' ', text).strip()
+    return text
+
+
+def _pairwise_min_similarity(values: list[str]) -> float:
+    if len(values) < 2:
+        return 1.0
+    min_sim = 1.0
+    for i, left in enumerate(values):
+        for right in values[i + 1:]:
+            sim = SequenceMatcher(None, left, right).ratio()
+            min_sim = min(min_sim, sim)
+    return min_sim
+
+
+def _token_jaccard(a: str, b: str) -> float:
+    left = set(a.split())
+    right = set(b.split())
+    if not left or not right:
+        return 0.0
+    return len(left & right) / len(left | right)
+
+
+def _titles_look_like_variants(values: list[str]) -> bool:
+    comparison_values = [_comparison_text(v) for v in values if _comparison_text(v)]
+    if len(comparison_values) < 2:
+        return True
+    for i, left in enumerate(comparison_values):
+        for right in comparison_values[i + 1:]:
+            if left == right:
+                continue
+            shorter, longer = (left, right) if len(left) <= len(right) else (right, left)
+            if shorter and (longer.startswith(shorter) or shorter in longer):
+                if len(shorter) / max(len(longer), 1) >= 0.55:
+                    continue
+            if _token_jaccard(left, right) >= 0.72:
+                continue
+            return False
+    return True
+
+
+def _grade_conflict(field: str, values: list[str]) -> str:
+    if field in {'doi', 'pmid', 'pmcid'}:
+        return 'C'
+    if field == 'year':
+        years = []
+        for value in values:
+            try:
+                years.append(int(str(value)))
+            except Exception:
+                pass
+        if len(years) >= 2 and max(years) - min(years) <= 1:
+            return 'B'
+        return 'C'
+
+    comparison_values = [_comparison_text(v) for v in values if _comparison_text(v)]
+    min_sim = _pairwise_min_similarity(comparison_values)
+
+    if field == 'title':
+        if min_sim >= 0.985:
+            return 'A'
+        if min_sim >= 0.92:
+            return 'B'
+        if _titles_look_like_variants(values):
+            return 'B'
+        return 'C'
+
+    if field == 'venue':
+        lowered = comparison_values
+        if any(a in b or b in a for i, a in enumerate(lowered) for b in lowered[i + 1:]):
+            return 'A'
+        if min_sim >= 0.96:
+            return 'A'
+        if min_sim >= 0.85:
+            return 'B'
+        return 'C'
+
+    return 'B'
+
+
+def _venue_rough_match(left: str | None, right: str | None) -> bool:
+    a = _comparison_text(left)
+    b = _comparison_text(right)
+    if not a or not b:
+        return False
+    return a == b or a in b or b in a or _pairwise_min_similarity([a, b]) >= 0.9
+
+
+def _is_non_ncbi_candidate_url(url: str | None) -> bool:
+    if not url:
+        return False
+    host = (urlparse(url).netloc or '').casefold()
+    if not host:
+        return False
+    return all(token not in host for token in ['pubmed.ncbi.nlm.nih.gov', 'pmc.ncbi.nlm.nih.gov', 'ncbi.nlm.nih.gov'])
+
+
+def _apply_pubmed_doi_suppression(
+    rows: list[dict[str, object]],
+    *,
+    candidate_venue: str | None = None,
+    candidate_year: str | None = None,
+    candidate_url: str | None = None,
+    candidate_pmcid: str | None = None,
+) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+    doi_groups: dict[str, list[dict[str, object]]] = {}
+    for row in rows:
+        doi_norm = _normalize_conflict_value('doi', row.get('doi'))
+        if not doi_norm:
+            continue
+        doi_groups.setdefault(doi_norm, []).append(row)
+
+    consensus_doi = None
+    consensus_supporters: list[str] = []
+    for doi_norm, supporters in doi_groups.items():
+        non_pubmed_supporters = [
+            row for row in supporters
+            if row.get('source_name') != 'pubmed' and row.get('matched')
+        ]
+        supporter_names = sorted({str(row.get('source_name')) for row in non_pubmed_supporters})
+        if len(supporter_names) >= 2:
+            consensus_doi = doi_norm
+            consensus_supporters = supporter_names
+            break
+
+    crossref_consensus_row = None
+    if not consensus_doi:
+        crossref_rows = [
+            row for row in rows
+            if row.get('source_name') == 'crossref' and row.get('matched') and _normalize_conflict_value('doi', row.get('doi'))
+        ]
+        if len(crossref_rows) == 1:
+            row = crossref_rows[0]
+            if (
+                (_is_non_ncbi_candidate_url(candidate_url) or bool(_normalize_conflict_value('pmcid', candidate_pmcid)))
+                and _venue_rough_match(candidate_venue, row.get('venue'))
+                and (not candidate_year or not row.get('year') or str(candidate_year) == str(row.get('year')))
+            ):
+                consensus_doi = _normalize_conflict_value('doi', row.get('doi'))
+                consensus_supporters = ['crossref', 'candidate_url', 'candidate_venue']
+                crossref_consensus_row = row
+
+    if not consensus_doi:
+        return rows, []
+
+    suppressed: list[dict[str, object]] = []
+    adjusted_rows: list[dict[str, object]] = []
+    for row in rows:
+        source_name = row.get('source_name')
+        query_type = row.get('query_type')
+        doi_norm = _normalize_conflict_value('doi', row.get('doi'))
+        pubmed_pmcid = _normalize_conflict_value('pmcid', row.get('pmcid'))
+        candidate_pmcid_norm = _normalize_conflict_value('pmcid', candidate_pmcid)
+        pmcid_conflict = bool(candidate_pmcid_norm and pubmed_pmcid and candidate_pmcid_norm != pubmed_pmcid)
+        if source_name == 'pubmed' and query_type == 'title' and doi_norm and doi_norm != consensus_doi:
+            suppression_reason = 'pubmed_title_doi_conflicts_with_consensus'
+            if pmcid_conflict:
+                suppression_reason = 'pubmed_title_doi_conflicts_with_candidate_pmcid'
+            elif crossref_consensus_row is not None:
+                suppression_reason = 'pubmed_title_doi_conflicts_with_crossref_plus_candidate_url'
+            new_row = dict(row)
+            suppressed.append(
+                {
+                    'source_name': source_name,
+                    'query_type': query_type,
+                    'suppressed_field': 'doi',
+                    'suppressed_value': row.get('doi'),
+                    'kept_pmid': row.get('pmid'),
+                    'kept_pmcid': row.get('pmcid'),
+                    'consensus_doi': consensus_doi,
+                    'consensus_supporters': consensus_supporters,
+                    'suppression_reason': suppression_reason,
+                    'candidate_pmcid': candidate_pmcid,
+                    'candidate_url': candidate_url,
+                }
+            )
+            new_row['doi'] = None
+            adjusted_rows.append(new_row)
+        else:
+            adjusted_rows.append(row)
+    return adjusted_rows, suppressed
+
+
+def _build_conflict_assessment(rows, fields: list[str], *, suppressed_signals: list[dict[str, object]] | None = None) -> dict:
+    raw_conflicts: dict[str, list[str]] = {}
+    graded_conflicts: dict[str, dict[str, object]] = {}
+
+    for field in fields:
+        normalized_map: dict[str | None, set[str]] = {}
+        for row in rows:
+            raw = row[field]
+            if not raw:
+                continue
+            key = _normalize_conflict_value(field, raw)
+            normalized_map.setdefault(key, set()).add(_clean_text(raw) or str(raw))
+        normalized_map = {k: v for k, v in normalized_map.items() if k is not None}
+        if len(normalized_map) <= 1:
+            continue
+        values = sorted({item for group in normalized_map.values() for item in group})
+        grade = _grade_conflict(field, values)
+        raw_conflicts[field] = values
+        graded_conflicts[field] = {'grade': grade, 'values': values}
+
+    if not graded_conflicts:
+        return {}
+
+    severe_conflict_fields = sorted([field for field, info in graded_conflicts.items() if info['grade'] == 'C'])
+    canonical_blocked = any(field in BLOCKING_GRADE_C_FIELDS for field in severe_conflict_fields)
+    if not canonical_blocked and len(severe_conflict_fields) >= 2:
+        canonical_blocked = True
+    if not canonical_blocked and 'year' in severe_conflict_fields and len(severe_conflict_fields) >= 1:
+        canonical_blocked = True
+
+    if severe_conflict_fields:
+        conflict_grade_max = 'C'
+    elif any(info['grade'] == 'B' for info in graded_conflicts.values()):
+        conflict_grade_max = 'B'
+    else:
+        conflict_grade_max = 'A'
+
+    return {
+        'raw_conflicts': raw_conflicts,
+        'graded_conflicts': graded_conflicts,
+        'conflict_grade_max': conflict_grade_max,
+        'severe_conflict_fields': severe_conflict_fields,
+        'canonical_blocked': canonical_blocked,
+        'canonical_block_reason': (
+            'severe_conflict:' + ','.join(severe_conflict_fields)
+            if canonical_blocked and severe_conflict_fields
+            else None
+        ),
+        'suppressed_signals': suppressed_signals or [],
+    }
+
+
+def _merge_confidence(conflict_assessment: dict) -> float:
+    if not conflict_assessment:
+        return 0.9
+    grade = conflict_assessment.get('conflict_grade_max')
+    blocked = bool(conflict_assessment.get('canonical_blocked'))
+    if grade == 'A':
+        return 0.8
+    if grade == 'B':
+        return 0.65
+    if blocked:
+        return 0.25
+    return 0.45
 
 
 def _pick_preferred(rows, field: str):
     candidates = []
     for r in rows:
         value = r[field]
-        if value:
-            candidates.append((SOURCE_PRIORITY.get(r['source_name'], 0), value, r['source_name']))
+        if not value:
+            continue
+        score = SOURCE_PRIORITY.get(r['source_name'], 0)
+        if field in {'doi', 'pmid', 'pmcid'}:
+            if r.get('query_type') in {'doi', 'doi_batch', 'pmid'}:
+                score += 3
+            elif r.get('query_type') == 'title':
+                score -= 1
+        candidates.append((score, value, r['source_name'], r.get('query_type')))
     if not candidates:
         return None, []
-    candidates.sort(key=lambda x: (-x[0], x[2]))
-    return candidates[0][1], [f"{src}:{val}" for _, val, src in candidates]
-
-
-def _conflicts(rows, field: str) -> list[str]:
-    normalized_map = {}
-    for r in rows:
-        raw = r[field]
-        if not raw:
-            continue
-        key = _normalize_conflict_value(field, raw)
-        normalized_map.setdefault(key, set()).add(raw)
-    if len(normalized_map) <= 1:
-        return []
-    out = []
-    for vals in normalized_map.values():
-        out.extend(sorted(vals))
-    return sorted(set(out))
+    candidates.sort(key=lambda x: (-x[0], x[2], x[3] or ''))
+    return candidates[0][1], [f"{src}[{qtype}]:{val}" for _, val, src, qtype in candidates]
 
 
 def build_merged_metadata(settings: Settings, *, limit: int) -> None:
@@ -85,7 +352,7 @@ def build_merged_metadata(settings: Settings, *, limit: int) -> None:
         for candidate_id in candidate_ids:
             src_rows = conn.execute(
                 """
-                SELECT source_name, title, authors_json, abstract, venue, year,
+                SELECT source_name, query_type, title, authors_json, abstract, venue, year,
                        publication_type, doi, pmid, pmcid, url, matched
                 FROM source_record
                 WHERE candidate_id = ? AND matched = 1
@@ -98,7 +365,8 @@ def build_merged_metadata(settings: Settings, *, limit: int) -> None:
 
             fallback_row = conn.execute(
                 '''
-                SELECT norm_title, norm_authors_json, venue_guess, year_guess, doi_extracted, pmid_extracted
+                SELECT norm_title, norm_authors_json, venue_guess, year_guess, doi_extracted, pmid_extracted,
+                       pmcid_extracted, url_canonical
                 FROM paper_candidate_normalized
                 WHERE candidate_id = ?
                 ''',
@@ -106,31 +374,37 @@ def build_merged_metadata(settings: Settings, *, limit: int) -> None:
             ).fetchone()
             dict_rows = [
                 {
-                    'source_name': r[0], 'title': r[1], 'authors_json': r[2], 'abstract': r[3],
-                    'venue': r[4], 'year': r[5], 'publication_type': r[6], 'doi': r[7],
-                    'pmid': r[8], 'pmcid': r[9], 'url': r[10], 'matched': r[11]
+                    'source_name': r[0], 'query_type': r[1], 'title': r[2], 'authors_json': r[3], 'abstract': r[4],
+                    'venue': r[5], 'year': r[6], 'publication_type': r[7], 'doi': r[8],
+                    'pmid': r[9], 'pmcid': r[10], 'url': r[11], 'matched': r[12]
                 }
                 for r in src_rows
             ]
-            preferred_title, title_trace = _pick_preferred(dict_rows, 'title')
-            preferred_authors_json, authors_trace = _pick_preferred(dict_rows, 'authors_json')
-            preferred_abstract, abstract_trace = _pick_preferred(dict_rows, 'abstract')
-            preferred_venue, venue_trace = _pick_preferred(dict_rows, 'venue')
-            preferred_year, year_trace = _pick_preferred(dict_rows, 'year')
-            preferred_doi, doi_trace = _pick_preferred(dict_rows, 'doi')
-            preferred_pmid, pmid_trace = _pick_preferred(dict_rows, 'pmid')
-            preferred_publication_type, type_trace = _pick_preferred(dict_rows, 'publication_type')
-
-            conflict_flags = {}
-            for field in ['title', 'venue', 'year', 'doi', 'pmid']:
-                vals = _conflicts(dict_rows, field)
-                if vals:
-                    conflict_flags[field] = vals
-
             if fallback_row:
-                norm_title, norm_authors_json, norm_venue_guess, norm_year_guess, norm_doi, norm_pmid = fallback_row
+                (
+                    norm_title, norm_authors_json, norm_venue_guess, norm_year_guess,
+                    norm_doi, norm_pmid, norm_pmcid, norm_url,
+                ) = fallback_row
             else:
-                norm_title = norm_authors_json = norm_venue_guess = norm_year_guess = norm_doi = norm_pmid = None
+                norm_title = norm_authors_json = norm_venue_guess = norm_year_guess = norm_doi = norm_pmid = norm_pmcid = norm_url = None
+
+            adjusted_rows, suppressed_signals = _apply_pubmed_doi_suppression(
+                dict_rows,
+                candidate_venue=norm_venue_guess,
+                candidate_year=norm_year_guess,
+                candidate_url=norm_url,
+                candidate_pmcid=norm_pmcid,
+            )
+            preferred_title, title_trace = _pick_preferred(adjusted_rows, 'title')
+            preferred_authors_json, authors_trace = _pick_preferred(adjusted_rows, 'authors_json')
+            preferred_abstract, abstract_trace = _pick_preferred(adjusted_rows, 'abstract')
+            preferred_venue, venue_trace = _pick_preferred(adjusted_rows, 'venue')
+            preferred_year, year_trace = _pick_preferred(adjusted_rows, 'year')
+            preferred_doi, doi_trace = _pick_preferred(adjusted_rows, 'doi')
+            preferred_pmid, pmid_trace = _pick_preferred(adjusted_rows, 'pmid')
+            preferred_publication_type, type_trace = _pick_preferred(adjusted_rows, 'publication_type')
+
+            conflict_assessment = _build_conflict_assessment(adjusted_rows, ['title', 'venue', 'year', 'doi', 'pmid'], suppressed_signals=suppressed_signals)
 
             conn.execute(
                 """
@@ -162,11 +436,18 @@ def build_merged_metadata(settings: Settings, *, limit: int) -> None:
                         'doi': doi_trace,
                         'pmid': pmid_trace,
                         'type': type_trace,
+                        'suppressed_signals': suppressed_signals,
                     }, ensure_ascii=False),
-                    json.dumps(conflict_flags, ensure_ascii=False),
-                    0.9 if not conflict_flags else 0.6,
+                    json.dumps(conflict_assessment, ensure_ascii=False) if conflict_assessment else '{}',
+                    _merge_confidence(conflict_assessment),
                 ),
             )
-            tracker.record_stage_cost(conn, stage='merge_metadata', status='ok', candidate_id=candidate_id)
+            tracker.record_stage_cost(
+                conn,
+                stage='merge_metadata',
+                status='blocked' if conflict_assessment.get('canonical_blocked') else 'ok',
+                candidate_id=candidate_id,
+                notes=json.dumps(conflict_assessment, ensure_ascii=False) if conflict_assessment else None,
+            )
         repo.finish_batch_run(conn, run_id=run_id, duration_ms=int((time.perf_counter()-started_at)*1000), processed_count=len(candidate_ids), status='ok')
         conn.commit()

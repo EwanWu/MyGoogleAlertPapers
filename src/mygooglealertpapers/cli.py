@@ -15,7 +15,10 @@ from mygooglealertpapers.pipeline.dedup import deduplicate_candidates
 from mygooglealertpapers.pipeline.dedup_stats import build_dedup_stats
 from mygooglealertpapers.pipeline.report import build_batch_report
 from mygooglealertpapers.pipeline.stats import build_normalization_stats
+from pathlib import Path
+
 from mygooglealertpapers.pipeline.cost_stats import build_cost_stats
+from mygooglealertpapers.pipeline.review_queue import build_review_queue_report, export_review_queue
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -49,6 +52,9 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser("report-merge", help="Show merged proposal statistics")
     subparsers.add_parser("report-dedup", help="Show dedup statistics")
     subparsers.add_parser("report-cost", help="Show cost/timing statistics")
+    subparsers.add_parser("report-review-queue", help="Show blocked merge/canonical review queue")
+    export_review_parser = subparsers.add_parser("export-review-queue", help="Export blocked merge/canonical review queue as JSONL")
+    export_review_parser.add_argument("--output", type=str, default="data/exports/merge_review_queue.jsonl")
 
     return parser
 
@@ -85,6 +91,13 @@ def main() -> None:
         print(build_dedup_stats(settings.sqlite_path))
     elif args.command == "report-cost":
         print(build_cost_stats(settings.sqlite_path))
+    elif args.command == "report-review-queue":
+        print(build_review_queue_report(settings.sqlite_path))
+    elif args.command == "export-review-queue":
+        output_path = Path(args.output)
+        if not output_path.is_absolute():
+            output_path = settings.workspace_root / output_path
+        print(export_review_queue(settings.sqlite_path, output_path))
     else:
         parser.error(f"Unknown command: {args.command}")
 

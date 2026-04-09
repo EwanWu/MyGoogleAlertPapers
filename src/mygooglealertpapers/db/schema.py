@@ -201,6 +201,15 @@ CREATE TABLE IF NOT EXISTS candidate_paper_link (
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS merge_review_queue (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    candidate_id TEXT NOT NULL UNIQUE,
+    reason TEXT,
+    assessment_json TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS cost_event (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     mail_uid TEXT,

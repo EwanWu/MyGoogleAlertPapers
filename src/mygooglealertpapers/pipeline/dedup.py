@@ -16,12 +16,52 @@ def _new_paper_id() -> str:
     return f"paper_{uuid.uuid4().hex[:16]}"
 
 
+def _ensure_review_queue_table(conn) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS merge_review_queue (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            candidate_id TEXT NOT NULL UNIQUE,
+            reason TEXT,
+            assessment_json TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+
+
+def _parse_conflict_assessment(payload: str | None) -> dict:
+    if not payload or payload == '{}':
+        return {}
+    try:
+        data = json.loads(payload)
+    except Exception:
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    if 'canonical_blocked' in data:
+        return data
+
+    severe_fields = sorted(
+        field for field, values in data.items()
+        if field in {'doi', 'pmid', 'pmcid'} and isinstance(values, list) and len(values) > 1
+    )
+    return {
+        'canonical_blocked': bool(severe_fields),
+        'canonical_block_reason': 'legacy_severe_conflict:' + ','.join(severe_fields) if severe_fields else None,
+        'severe_conflict_fields': severe_fields,
+        'raw_conflicts': data,
+    }
+
+
 def deduplicate_candidates(settings: Settings, *, limit: int) -> None:
     repo = Repository(settings.sqlite_path)
     tracker = CostTracker(repo, settings.sqlite_path)
     run_id = 'dedup_candidates_' + uuid.uuid4().hex[:12]
     started_at = time.perf_counter()
     with repo.connect() as conn:
+        _ensure_review_queue_table(conn)
         repo.start_batch_run(conn, run_id=run_id, stage='dedup_candidates', requested_limit=limit, notes=None)
         rows = conn.execute(
             """
@@ -29,11 +69,12 @@ def deduplicate_candidates(settings: Settings, *, limit: int) -> None:
                    pcn.year_guess, pcn.doi_extracted, pcn.pmid_extracted, pcn.pmcid_extracted,
                    mmp.preferred_title, mmp.preferred_authors_json, mmp.preferred_abstract,
                    mmp.preferred_venue, mmp.preferred_year, mmp.preferred_doi, mmp.preferred_pmid,
-                   mmp.preferred_publication_type
+                   mmp.preferred_publication_type, mmp.conflict_flags_json
             FROM paper_candidate_normalized pcn
             JOIN merged_metadata_proposal mmp ON mmp.candidate_id = pcn.candidate_id
             LEFT JOIN candidate_paper_link cpl ON cpl.candidate_id = pcn.candidate_id
-            WHERE cpl.id IS NULL
+            LEFT JOIN merge_review_queue mrq ON mrq.candidate_id = pcn.candidate_id
+            WHERE cpl.id IS NULL AND mrq.id IS NULL
             ORDER BY pcn.id ASC
             LIMIT ?
             """,
@@ -46,8 +87,25 @@ def deduplicate_candidates(settings: Settings, *, limit: int) -> None:
                 year_guess, doi_extracted, pmid_extracted, pmcid_extracted,
                 preferred_title, preferred_authors_json, preferred_abstract,
                 preferred_venue, preferred_year, preferred_doi, preferred_pmid,
-                preferred_publication_type,
+                preferred_publication_type, conflict_flags_json,
             ) = row
+
+            conflict_assessment = _parse_conflict_assessment(conflict_flags_json)
+            if conflict_assessment.get('canonical_blocked'):
+                reason = conflict_assessment.get('canonical_block_reason') or 'blocked_for_review'
+                conn.execute(
+                    """
+                    INSERT INTO merge_review_queue (candidate_id, reason, assessment_json, updated_at)
+                    VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+                    ON CONFLICT(candidate_id) DO UPDATE SET
+                        reason = excluded.reason,
+                        assessment_json = excluded.assessment_json,
+                        updated_at = CURRENT_TIMESTAMP
+                    """,
+                    (candidate_id, reason, json.dumps(conflict_assessment, ensure_ascii=False)),
+                )
+                tracker.record_stage_cost(conn, stage='dedup_candidates', status='blocked', candidate_id=candidate_id, notes=json.dumps(conflict_assessment, ensure_ascii=False))
+                continue
 
             paper = None
             evidence = {}
