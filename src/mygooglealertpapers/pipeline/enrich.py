@@ -14,6 +14,8 @@ from mygooglealertpapers.enrich.crossref import query_crossref
 from mygooglealertpapers.enrich.openalex import query_openalex, query_openalex_batch_by_doi
 from mygooglealertpapers.enrich.pubmed import query_pubmed
 from mygooglealertpapers.enrich.semanticscholar import query_semanticscholar
+from mygooglealertpapers.enrich.europepmc import query_europepmc
+from mygooglealertpapers.enrich.arxiv import query_arxiv
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +29,7 @@ class ProviderIntent:
     norm_title: str | None
     doi: str | None
     pmid: str | None
+    arxiv_id: str | None
     first_author_family: str | None
     venue_guess: str | None
     year_guess: str | None
@@ -48,31 +51,58 @@ def _canonical_query_key(query_type: str, value: str | None) -> str:
     return text
 
 
+def _looks_biomedical(venue_guess: str | None, norm_title: str | None) -> bool:
+    hay = ' '.join(x for x in [venue_guess, norm_title] if x).casefold()
+    biomedical_tokens = [
+        'mri', 'magnetic resonance', 'stroke', 'brain', 'cerebral', 'neurolog', 'radiolog',
+        'cardio', 'vascular', 'medic', 'clinical', 'neuro', 'oncolog', 'disease', 'patient',
+    ]
+    return any(tok in hay for tok in biomedical_tokens)
+
+
+def _is_arxiv_native(arxiv_id: str | None, norm_title: str | None) -> bool:
+    if arxiv_id:
+        return True
+    return bool(norm_title and 'arxiv' in norm_title.casefold())
+
+
 def _build_provider_intents(row) -> list[ProviderIntent]:
-    candidate_id, norm_title, doi, pmid, first_author_family, venue_guess, year_guess = row
+    candidate_id, norm_title, doi, pmid, arxiv_id, first_author_family, venue_guess, year_guess = row
     intents: list[ProviderIntent] = []
     if doi or norm_title:
         query_type = 'doi' if doi else 'title'
         query_key = _canonical_query_key(query_type, doi or norm_title)
         intents.append(
-            ProviderIntent(candidate_id, 'crossref', query_type, query_key, norm_title, doi, pmid, first_author_family, venue_guess, year_guess)
+            ProviderIntent(candidate_id, 'crossref', query_type, query_key, norm_title, doi, pmid, arxiv_id, first_author_family, venue_guess, year_guess)
         )
         intents.append(
-            ProviderIntent(candidate_id, 'openalex', query_type, query_key, norm_title, doi, pmid, first_author_family, venue_guess, year_guess)
+            ProviderIntent(candidate_id, 'openalex', query_type, query_key, norm_title, doi, pmid, arxiv_id, first_author_family, venue_guess, year_guess)
         )
-    if norm_title or doi:
-        query_type = 'doi' if doi else 'title'
-        query_key = _canonical_query_key(query_type, doi or norm_title)
         intents.append(
-            ProviderIntent(candidate_id, 'semanticscholar', query_type, query_key, norm_title, doi, pmid, first_author_family, venue_guess, year_guess)
+            ProviderIntent(candidate_id, 'semanticscholar', query_type, query_key, norm_title, doi, pmid, arxiv_id, first_author_family, venue_guess, year_guess)
         )
+
+    is_biomedical = _looks_biomedical(venue_guess, norm_title)
     if pmid:
         intents.append(
-            ProviderIntent(candidate_id, 'pubmed', 'pmid', _canonical_query_key('pmid', pmid), norm_title, doi, pmid, first_author_family, venue_guess, year_guess)
+            ProviderIntent(candidate_id, 'pubmed', 'pmid', _canonical_query_key('pmid', pmid), norm_title, doi, pmid, arxiv_id, first_author_family, venue_guess, year_guess)
         )
-    elif norm_title and not doi:
         intents.append(
-            ProviderIntent(candidate_id, 'pubmed', 'title', _canonical_query_key('title', norm_title), norm_title, doi, pmid, first_author_family, venue_guess, year_guess)
+            ProviderIntent(candidate_id, 'europepmc', 'pmid', _canonical_query_key('pmid', pmid), norm_title, doi, pmid, arxiv_id, first_author_family, venue_guess, year_guess)
+        )
+    elif norm_title and not doi and is_biomedical:
+        intents.append(
+            ProviderIntent(candidate_id, 'pubmed', 'title', _canonical_query_key('title', norm_title), norm_title, doi, pmid, arxiv_id, first_author_family, venue_guess, year_guess)
+        )
+        intents.append(
+            ProviderIntent(candidate_id, 'europepmc', 'title', _canonical_query_key('title', norm_title), norm_title, doi, pmid, arxiv_id, first_author_family, venue_guess, year_guess)
+        )
+
+    if _is_arxiv_native(arxiv_id, norm_title):
+        arxiv_query_type = 'arxiv_id' if arxiv_id else 'title'
+        arxiv_query_key = _canonical_query_key(arxiv_query_type if arxiv_query_type != 'arxiv_id' else 'title', arxiv_id or norm_title)
+        intents.append(
+            ProviderIntent(candidate_id, 'arxiv', arxiv_query_type, arxiv_query_key, norm_title, doi, pmid, arxiv_id, first_author_family, venue_guess, year_guess)
         )
     return intents
 
@@ -128,7 +158,7 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
         rows = conn.execute(
             '''
             SELECT pcn.candidate_id, pcn.norm_title, pcn.doi_extracted, pcn.pmid_extracted,
-                   pcn.first_author_family, pcn.venue_guess, pcn.year_guess
+                   pcn.arxiv_id_extracted, pcn.first_author_family, pcn.venue_guess, pcn.year_guess
             FROM paper_candidate_normalized pcn
             ORDER BY pcn.id ASC
             LIMIT ?
@@ -253,6 +283,10 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
             try:
                 if intent.provider == 'pubmed':
                     rec = query_pubmed(intent.candidate_id, pmid=intent.pmid, title=intent.norm_title, first_author_family=intent.first_author_family, venue_hint=intent.venue_guess, query_year=intent.year_guess, candidate_doi=intent.doi)
+                elif intent.provider == 'europepmc':
+                    rec = query_europepmc(intent.candidate_id, doi=intent.doi, pmid=intent.pmid, title=intent.norm_title, first_author_family=intent.first_author_family, venue_hint=intent.venue_guess, query_year=intent.year_guess)
+                elif intent.provider == 'arxiv':
+                    rec = query_arxiv(intent.candidate_id, arxiv_id=intent.arxiv_id, title=intent.norm_title if intent.query_type == 'title' else None, first_author_family=intent.first_author_family, query_year=intent.year_guess)
                 elif intent.provider == 'semanticscholar':
                     rec = query_semanticscholar(intent.candidate_id, doi=intent.doi, title=intent.norm_title, first_author_family=intent.first_author_family, venue_hint=intent.venue_guess, query_year=intent.year_guess, api_key=settings.semantic_scholar_api_key)
                 elif intent.provider == 'crossref':
