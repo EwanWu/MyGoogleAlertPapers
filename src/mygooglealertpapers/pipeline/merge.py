@@ -1,16 +1,15 @@
 from __future__ import annotations
 
-import html
 import json
 import logging
 import re
 import time
 import uuid
 from difflib import SequenceMatcher
-from unicodedata import normalize as unicode_normalize
 from urllib.parse import urlparse
 
 from mygooglealertpapers.config import Settings
+from mygooglealertpapers.normalize.text import clean_abstract, clean_text, clean_title, clean_venue, comparison_text
 from mygooglealertpapers.cost.tracker import CostTracker
 from mygooglealertpapers.db.repository import Repository
 
@@ -25,22 +24,32 @@ SOURCE_PRIORITY = {
 
 GRADE_ORDER = {'A': 1, 'B': 2, 'C': 3}
 BLOCKING_GRADE_C_FIELDS = {'doi', 'pmid', 'pmcid', 'title'}
+VENUE_ABBREVIATIONS = {
+    'jacc': 'journal of the american college of cardiology',
+    'jacc cardiovascular imaging': 'jacc cardiovascular imaging',
+    'cjca': 'canadian journal of cardiology',
+    'mrm': 'magnetic resonance in medicine',
+    'bmj open': 'bmj open',
+}
+STOPWORD_TOKENS = {'the', 'of', 'and', 'in', 'for', 'journal'}
 
 
 def _clean_text(value: str | None) -> str | None:
-    if not value:
-        return None
-    text = html.unescape(str(value))
-    text = re.sub(r'<[^>]+>', ' ', text)
-    text = unicode_normalize('NFKC', text)
-    text = text.replace('–', '-').replace('—', '-').replace('−', '-')
-    text = text.replace('“', '"').replace('”', '"').replace('’', "'")
-    text = re.sub(r'\s+', ' ', text).strip()
-    return text or None
+    return clean_text(value)
+
+
+def _field_clean_text(field: str, value: str | None) -> str | None:
+    if field == 'title':
+        return clean_title(value)
+    if field == 'venue':
+        return clean_venue(value)
+    if field == 'abstract':
+        return clean_abstract(value)
+    return clean_text(value)
 
 
 def _normalize_conflict_value(field: str, value: str | None) -> str | None:
-    text = _clean_text(value)
+    text = _field_clean_text(field, value)
     if not text:
         return None
     if field in {'title', 'venue'}:
@@ -58,11 +67,47 @@ def _normalize_conflict_value(field: str, value: str | None) -> str | None:
 
 
 def _comparison_text(value: str | None) -> str:
-    text = _clean_text(value) or ''
-    text = text.casefold()
-    text = re.sub(r'[^\w\s]', ' ', text)
+    return comparison_text(value)
+
+
+def _normalize_venue_alias(value: str | None) -> str:
+    text = _comparison_text(value)
+    if not text:
+        return ''
+    text = VENUE_ABBREVIATIONS.get(text, text)
+    if text.startswith('the '):
+        text = text[4:]
+    text = text.replace(' alzheimer s ', " alzheimer's ")
+    text = text.replace('cardiovascular imaging', 'cardiovascular imaging')
+    text = re.sub(r'\bjournal\b', 'journal', text)
     text = re.sub(r'\s+', ' ', text).strip()
-    return text
+    return VENUE_ABBREVIATIONS.get(text, text)
+
+
+def _venue_token_signature(value: str | None) -> set[str]:
+    text = _normalize_venue_alias(value)
+    if not text:
+        return set()
+    tokens = {tok for tok in text.split() if tok and tok not in STOPWORD_TOKENS}
+    return tokens
+
+
+def _venue_equivalent(left: str | None, right: str | None) -> bool:
+    a = _normalize_venue_alias(left)
+    b = _normalize_venue_alias(right)
+    if not a or not b:
+        return False
+    if a == b:
+        return True
+    if a in b or b in a:
+        return True
+    a_tokens = _venue_token_signature(left)
+    b_tokens = _venue_token_signature(right)
+    if a_tokens and a_tokens == b_tokens:
+        return True
+    if a_tokens and b_tokens and len(a_tokens & b_tokens) / len(a_tokens | b_tokens) >= 0.9:
+        return True
+    return False
 
 
 def _pairwise_min_similarity(values: list[str]) -> float:
@@ -129,12 +174,16 @@ def _grade_conflict(field: str, values: list[str]) -> str:
         return 'C'
 
     if field == 'venue':
-        lowered = comparison_values
-        if any(a in b or b in a for i, a in enumerate(lowered) for b in lowered[i + 1:]):
+        if all(_venue_equivalent(values[0], other) for other in values[1:]):
             return 'A'
-        if min_sim >= 0.96:
-            return 'A'
-        if min_sim >= 0.85:
+        normalized_values = [_normalize_venue_alias(v) for v in values if _normalize_venue_alias(v)]
+        if len(normalized_values) >= 2:
+            venue_sim = _pairwise_min_similarity(normalized_values)
+            if venue_sim >= 0.96:
+                return 'A'
+            if venue_sim >= 0.88:
+                return 'B'
+        if min_sim >= 0.9:
             return 'B'
         return 'C'
 
@@ -142,6 +191,8 @@ def _grade_conflict(field: str, values: list[str]) -> str:
 
 
 def _venue_rough_match(left: str | None, right: str | None) -> bool:
+    if _venue_equivalent(left, right):
+        return True
     a = _comparison_text(left)
     b = _comparison_text(right)
     if not a or not b:
@@ -255,7 +306,7 @@ def _build_conflict_assessment(rows, fields: list[str], *, suppressed_signals: l
             if not raw:
                 continue
             key = _normalize_conflict_value(field, raw)
-            normalized_map.setdefault(key, set()).add(_clean_text(raw) or str(raw))
+            normalized_map.setdefault(key, set()).add(_field_clean_text(field, raw) or str(raw))
         normalized_map = {k: v for k, v in normalized_map.items() if k is not None}
         if len(normalized_map) <= 1:
             continue
@@ -418,10 +469,10 @@ def build_merged_metadata(settings: Settings, *, limit: int) -> None:
                 """,
                 (
                     candidate_id,
-                    preferred_title or norm_title,
+                    clean_title(preferred_title or norm_title),
                     preferred_authors_json or norm_authors_json,
-                    preferred_abstract,
-                    preferred_venue or norm_venue_guess,
+                    clean_abstract(preferred_abstract),
+                    clean_venue(preferred_venue or norm_venue_guess),
                     preferred_year or norm_year_guess,
                     preferred_doi or norm_doi,
                     preferred_pmid or norm_pmid,

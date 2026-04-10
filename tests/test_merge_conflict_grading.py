@@ -1,5 +1,5 @@
 from mygooglealertpapers.pipeline.dedup import _parse_conflict_assessment
-from mygooglealertpapers.pipeline.merge import _apply_pubmed_doi_suppression, _build_conflict_assessment
+from mygooglealertpapers.pipeline.merge import _apply_pubmed_doi_suppression, _build_conflict_assessment, _venue_equivalent
 
 
 def test_doi_conflict_is_grade_c_and_blocks_canonicalization():
@@ -87,3 +87,18 @@ def test_legacy_conflict_payload_with_identifier_disagreement_still_blocks():
     assessment = _parse_conflict_assessment('{"doi": ["10.1/a", "10.1/b"]}')
     assert assessment['canonical_blocked'] is True
     assert assessment['canonical_block_reason'].startswith('legacy_severe_conflict:')
+
+
+def test_venue_abbreviation_and_full_name_are_equivalent():
+    assert _venue_equivalent('JACC', 'Journal of the American College of Cardiology') is True
+
+
+def test_venue_alias_conflict_is_not_severe():
+    rows = [
+        {'title': 'Paper A', 'venue': 'JACC', 'year': '2026', 'doi': '10.1000/aaa', 'pmid': None},
+        {'title': 'Paper A', 'venue': 'Journal of the American College of Cardiology', 'year': '2026', 'doi': '10.1000/aaa', 'pmid': None},
+    ]
+    assessment = _build_conflict_assessment(rows, ['title', 'venue', 'year', 'doi', 'pmid'])
+    assert assessment['graded_conflicts']['venue']['grade'] == 'A'
+    assert assessment['conflict_grade_max'] == 'A'
+    assert assessment['canonical_blocked'] is False

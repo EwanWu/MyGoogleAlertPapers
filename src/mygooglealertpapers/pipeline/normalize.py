@@ -10,6 +10,7 @@ from mygooglealertpapers.cost.tracker import CostTracker
 from mygooglealertpapers.db.repository import Repository
 from mygooglealertpapers.normalize.authors import authors_to_json, first_author_family
 from mygooglealertpapers.normalize.identifiers import canonicalize_url, extract_arxiv_id, extract_doi, extract_pmcid, extract_pmid
+from mygooglealertpapers.normalize.text import clean_venue
 from mygooglealertpapers.normalize.title import make_title_key, normalize_title
 
 logger = logging.getLogger(__name__)
@@ -55,7 +56,7 @@ def normalize_candidates(settings: Settings, *, limit: int) -> None:
                     authors_to_json(raw_authors),
                     first_author_family(raw_authors),
                     year_guess,
-                    venue_guess,
+                    clean_venue(venue_guess),
                     extract_doi(combined_text),
                     extract_pmid(combined_text),
                     extract_pmcid(combined_text) or extract_pmcid(url_source),

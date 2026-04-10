@@ -1,15 +1,12 @@
 from __future__ import annotations
 
 import re
-import unicodedata
+
+from mygooglealertpapers.normalize.text import clean_title
 
 
 def normalize_title(title: str | None) -> str | None:
-    if not title:
-        return None
-    text = unicodedata.normalize("NFKC", title)
-    text = re.sub(r"\s+", " ", text).strip()
-    return text or None
+    return clean_title(title)
 
 
 def make_title_key(title: str | None) -> str | None:
