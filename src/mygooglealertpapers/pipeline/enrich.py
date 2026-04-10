@@ -51,26 +51,28 @@ def _canonical_query_key(query_type: str, value: str | None) -> str:
 def _build_provider_intents(row) -> list[ProviderIntent]:
     candidate_id, norm_title, doi, pmid, first_author_family, venue_guess, year_guess = row
     intents: list[ProviderIntent] = []
-    if norm_title or doi:
-        query_type = 'doi' if doi else 'title'
-        query_key = _canonical_query_key(query_type, doi or norm_title)
-        intents.append(
-            ProviderIntent(candidate_id, 'pubmed', 'pmid' if pmid else 'title', _canonical_query_key('pmid' if pmid else 'title', pmid or norm_title), norm_title, doi, pmid, first_author_family, venue_guess, year_guess)
-        )
-        intents.append(
-            ProviderIntent(candidate_id, 'semanticscholar', query_type, query_key, norm_title, doi, pmid, first_author_family, venue_guess, year_guess)
-        )
     if doi or norm_title:
         query_type = 'doi' if doi else 'title'
         query_key = _canonical_query_key(query_type, doi or norm_title)
         intents.append(
             ProviderIntent(candidate_id, 'crossref', query_type, query_key, norm_title, doi, pmid, first_author_family, venue_guess, year_guess)
         )
-    if doi or norm_title:
+        intents.append(
+            ProviderIntent(candidate_id, 'openalex', query_type, query_key, norm_title, doi, pmid, first_author_family, venue_guess, year_guess)
+        )
+    if norm_title or doi:
         query_type = 'doi' if doi else 'title'
         query_key = _canonical_query_key(query_type, doi or norm_title)
         intents.append(
-            ProviderIntent(candidate_id, 'openalex', query_type, query_key, norm_title, doi, pmid, first_author_family, venue_guess, year_guess)
+            ProviderIntent(candidate_id, 'semanticscholar', query_type, query_key, norm_title, doi, pmid, first_author_family, venue_guess, year_guess)
+        )
+    if pmid:
+        intents.append(
+            ProviderIntent(candidate_id, 'pubmed', 'pmid', _canonical_query_key('pmid', pmid), norm_title, doi, pmid, first_author_family, venue_guess, year_guess)
+        )
+    elif norm_title and not doi:
+        intents.append(
+            ProviderIntent(candidate_id, 'pubmed', 'title', _canonical_query_key('title', norm_title), norm_title, doi, pmid, first_author_family, venue_guess, year_guess)
         )
     return intents
 
