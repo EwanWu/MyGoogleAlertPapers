@@ -1,5 +1,5 @@
 from mygooglealertpapers.pipeline.dedup import _parse_conflict_assessment
-from mygooglealertpapers.pipeline.merge import _apply_pubmed_doi_suppression, _build_conflict_assessment, _venue_equivalent
+from mygooglealertpapers.pipeline.merge import _apply_pubmed_doi_suppression, _build_conflict_assessment, _pick_preferred, _venue_equivalent
 
 
 def test_doi_conflict_is_grade_c_and_blocks_canonicalization():
@@ -102,3 +102,34 @@ def test_venue_alias_conflict_is_not_severe():
     assert assessment['graded_conflicts']['venue']['grade'] == 'A'
     assert assessment['conflict_grade_max'] == 'A'
     assert assessment['canonical_blocked'] is False
+
+
+def test_pubmed_is_fallback_only_for_title_venue_and_doi():
+    rows = [
+        {'source_name': 'pubmed', 'query_type': 'title', 'title': 'PubMed Title', 'venue': 'PubMed Venue', 'doi': '10.1/pubmed', 'pmid': '123', 'pmcid': 'PMC123'},
+        {'source_name': 'crossref', 'query_type': 'doi', 'title': 'Crossref Title', 'venue': 'Crossref Venue', 'doi': '10.1/crossref', 'pmid': None, 'pmcid': None},
+    ]
+    preferred_title, title_trace = _pick_preferred(rows, 'title')
+    preferred_venue, venue_trace = _pick_preferred(rows, 'venue')
+    preferred_doi, doi_trace = _pick_preferred(rows, 'doi')
+    preferred_pmid, pmid_trace = _pick_preferred(rows, 'pmid')
+
+    assert preferred_title == 'Crossref Title'
+    assert preferred_venue == 'Crossref Venue'
+    assert preferred_doi == '10.1/crossref'
+    assert preferred_pmid == '123'
+    assert all(not item.startswith('pubmed[') for item in title_trace)
+    assert all(not item.startswith('pubmed[') for item in venue_trace)
+    assert all(not item.startswith('pubmed[') for item in doi_trace)
+    assert any(item.startswith('pubmed[') for item in pmid_trace)
+
+
+def test_pubmed_can_still_supply_abstract_when_no_other_source_has_one():
+    rows = [
+        {'source_name': 'crossref', 'query_type': 'doi', 'abstract': None},
+        {'source_name': 'openalex', 'query_type': 'doi_batch', 'abstract': None},
+        {'source_name': 'pubmed', 'query_type': 'title', 'abstract': 'Useful abstract from PubMed'},
+    ]
+    preferred_abstract, abstract_trace = _pick_preferred(rows, 'abstract')
+    assert preferred_abstract == 'Useful abstract from PubMed'
+    assert any(item.startswith('pubmed[') for item in abstract_trace)

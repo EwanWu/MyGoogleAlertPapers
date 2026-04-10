@@ -22,6 +22,8 @@ SOURCE_PRIORITY = {
     'pubmed': 1,
 }
 
+PUBMED_FALLBACK_FIELDS = {'abstract', 'pmid', 'pmcid'}
+
 GRADE_ORDER = {'A': 1, 'B': 2, 'C': 3}
 BLOCKING_GRADE_C_FIELDS = {'doi', 'pmid', 'pmcid', 'title'}
 VENUE_ABBREVIATIONS = {
@@ -363,19 +365,25 @@ def _merge_confidence(conflict_assessment: dict) -> float:
 
 def _pick_preferred(rows, field: str):
     candidates = []
+    trace_candidates = []
     for r in rows:
         value = r[field]
         if not value:
             continue
-        score = SOURCE_PRIORITY.get(r['source_name'], 0)
+        source_name = r['source_name']
+        query_type = r.get('query_type')
+        trace_candidates.append((value, source_name, query_type))
+        if source_name == 'pubmed' and field not in PUBMED_FALLBACK_FIELDS:
+            continue
+        score = SOURCE_PRIORITY.get(source_name, 0)
         if field in {'doi', 'pmid', 'pmcid'}:
-            if r.get('query_type') in {'doi', 'doi_batch', 'pmid'}:
+            if query_type in {'doi', 'doi_batch', 'pmid'}:
                 score += 3
-            elif r.get('query_type') == 'title':
+            elif query_type == 'title':
                 score -= 1
-        candidates.append((score, value, r['source_name'], r.get('query_type')))
+        candidates.append((score, value, source_name, query_type))
     if not candidates:
-        return None, []
+        return None, [f"{src}[{qtype}]:{val}" for val, src, qtype in trace_candidates]
     candidates.sort(key=lambda x: (-x[0], x[2], x[3] or ''))
     return candidates[0][1], [f"{src}[{qtype}]:{val}" for _, val, src, qtype in candidates]
 
