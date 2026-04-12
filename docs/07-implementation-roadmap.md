@@ -75,19 +75,28 @@ Deliverables:
 - stage/provider latency summaries from cost_event
 - experiment reflection document
 
-## Phase 3.6 (planned next): enrichment reliability hardening
-Deliverables:
-- provider-level enrichment status tracking for true checkpoint/resume behavior
+## Phase 3.6 (implemented / first-pass complete): enrichment reliability hardening
+Delivered or largely implemented:
+- provider-level enrichment status tracking for checkpoint/resume selection
 - normalized and deduplicated query-cache keys with stronger reuse guarantees
 - safer partial-rerun behavior after interruption or provider failure
-- stricter title-fallback acceptance rules
+- stricter title-fallback handling in the current enrichment policy
 - merge conflict grading that distinguishes superficial formatting differences from severe DOI/PMID/content disagreement
 - canonicalization guardrails for severe-conflict proposals
 
+## Phase 3.7 (current priority): validation infrastructure productization
+Execution basis:
+- `docs/16-validation-infrastructure-blueprint-2026-04-12.md`
+
+Deliverables:
+1. Package A: reusable replay validation workflow
+2. Package B: rule-based DOI conflict suppression continuation
+3. Package C: monetary cost accounting plus event-driven execution-boundary reduction
+
 ## Immediate implementation priority
 Do not widen scope first.
-Before adding more providers or larger-scale runs, harden:
-1. resumability
-2. cache authority and duplicate-request prevention
-3. title-based match conservatism
-4. severe-conflict protection before canonicalization
+Before additional provider expansion or new broad validation runs:
+1. productize same-batch replay as the standard validation workflow
+2. use replay to validate the next DOI suppression rule set
+3. populate real monetary cost reporting
+4. reduce orchestration-side polling overhead through batch-run completion gating

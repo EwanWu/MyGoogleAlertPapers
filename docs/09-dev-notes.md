@@ -26,16 +26,27 @@
 - Keep documents updated, but do not artificially suppress useful in-chat discussion during execution.
 - Planning, design, exploratory discussion, and execution updates should still be discussed fully with the user when helpful.
 
+## Current execution basis
+For the next implementation cycle, follow:
+- `docs/16-validation-infrastructure-blueprint-2026-04-12.md`
+
+This blueprint is now the default basis for code and experiment sequencing.
+Priority order:
+1. Package A: reusable replay validation workflow
+2. Package B: rule-based DOI conflict suppression continuation
+3. Package C: monetary cost accounting + event-driven execution-boundary reduction
+
 ## Recommended next coding step
-Proceed from candidate extraction into metadata enrichment, using the existing normalization skeleton (title keys, canonical URLs, DOI/PMID/PMCID/arXiv extraction) as the handoff layer.
+Start with Package A rather than another ad hoc validation run.
 
-- Batch-level timing should be tracked explicitly so full-run and per-stage wall-clock durations are reportable, not inferred only from provider latency.
+Immediate tasks:
+- create the first replay driver script
+- define replay reset contract for downstream tables
+- define policy-profile loading structure
+- emit machine-readable replay summaries and a report artifact
 
-- Query-level caching is now a required optimization target; repeated DOI/title/provider lookups should not refetch identical requests unnecessarily.
-- The next hardening step is to make cache keys canonical and enforce stronger uniqueness/authoritativeness so repeated provider queries do not accumulate duplicate cache rows.
-- Candidate-level enrichment completion is too coarse for interrupted runs; provider-level enrichment progress tracking has now been introduced in the first Package-1 implementation pass so reruns can select work by provider status rather than by candidate-level `source_record` existence.
-- Remaining limitation after the first pass: transaction durability is still coarser than ideal under hard-kill interruption, so future refinement may still be needed if provider-level checkpoint persistence must survive mid-run process termination more granularly.
-
-- Merge-side normalization should collapse superficial string differences before flagging provider conflicts.
-- Merge conflict handling should be upgraded from a simple conflict-count heuristic to graded conflict classes, with DOI/PMID disagreement treated as severe and blocked from confident canonicalization.
-- Title-based fallback remains the main correctness risk in enrichment; acceptance should be tightened using stronger combined evidence from title, year, first-author family, and venue.
+Additional notes:
+- Batch-level timing should continue to be tracked explicitly so full-run and per-stage wall-clock durations are reportable, not inferred only from provider latency.
+- Query-level caching and provider-level resumability are already in place; the next leverage point is turning replay into the standard comparison harness.
+- Merge-side DOI suppression changes should only be promoted after replay-based validation.
+- Monetary cost reporting and batch-run completion gating should follow after Package A establishes the shared validation base.
