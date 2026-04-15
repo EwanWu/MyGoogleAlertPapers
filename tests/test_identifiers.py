@@ -19,3 +19,9 @@ def test_extract_pmcid_from_pmc_url():
 def test_canonicalize_scholar_wrapper_url():
     wrapped = 'https://scholar.google.com/scholar_url?url=https%3A%2F%2Fexample.org%2Fpaper1&hl=en'
     assert canonicalize_url(wrapped) == 'https://example.org/paper1'
+
+
+def test_extract_doi_cleans_dirty_suffixes():
+    assert extract_doi('10.3892/etm.2026.13124/download') == '10.3892/etm.2026.13124'
+    assert extract_doi('10.1186/s12880-026-02246-x_reference.pdf') == '10.1186/s12880-026-02246-x'
+    assert extract_doi('10.1093/ejhf/xuag062/67316451/xuag062.pdf') == '10.1093/ejhf/xuag062'

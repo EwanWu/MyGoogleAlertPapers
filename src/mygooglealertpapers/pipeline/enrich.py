@@ -66,44 +66,62 @@ def _is_arxiv_native(arxiv_id: str | None, norm_title: str | None) -> bool:
     return bool(norm_title and 'arxiv' in norm_title.casefold())
 
 
-def _build_provider_intents(row) -> list[ProviderIntent]:
+def _provider_enabled(settings: Settings, provider: str, default: bool = True) -> bool:
+    return settings.policy_profile.provider_enabled(provider, default)
+
+
+def _provider_value(settings: Settings, provider: str, key: str, default: object = None) -> object:
+    return settings.policy_profile.provider_value(provider, key, default)
+
+
+def _build_provider_intents(settings: Settings, row) -> list[ProviderIntent]:
     candidate_id, norm_title, doi, pmid, arxiv_id, first_author_family, venue_guess, year_guess = row
     intents: list[ProviderIntent] = []
     if doi or norm_title:
         query_type = 'doi' if doi else 'title'
         query_key = _canonical_query_key(query_type, doi or norm_title)
-        intents.append(
-            ProviderIntent(candidate_id, 'crossref', query_type, query_key, norm_title, doi, pmid, arxiv_id, first_author_family, venue_guess, year_guess)
-        )
-        intents.append(
-            ProviderIntent(candidate_id, 'openalex', query_type, query_key, norm_title, doi, pmid, arxiv_id, first_author_family, venue_guess, year_guess)
-        )
-        intents.append(
-            ProviderIntent(candidate_id, 'semanticscholar', query_type, query_key, norm_title, doi, pmid, arxiv_id, first_author_family, venue_guess, year_guess)
-        )
+        for provider in ['crossref', 'openalex', 'semanticscholar']:
+            if _provider_enabled(settings, provider, True):
+                intents.append(
+                    ProviderIntent(candidate_id, provider, query_type, query_key, norm_title, doi, pmid, arxiv_id, first_author_family, venue_guess, year_guess)
+                )
 
     is_biomedical = _looks_biomedical(venue_guess, norm_title)
-    if pmid:
-        intents.append(
-            ProviderIntent(candidate_id, 'pubmed', 'pmid', _canonical_query_key('pmid', pmid), norm_title, doi, pmid, arxiv_id, first_author_family, venue_guess, year_guess)
-        )
-        intents.append(
-            ProviderIntent(candidate_id, 'europepmc', 'pmid', _canonical_query_key('pmid', pmid), norm_title, doi, pmid, arxiv_id, first_author_family, venue_guess, year_guess)
-        )
-    elif norm_title and not doi and is_biomedical:
-        intents.append(
-            ProviderIntent(candidate_id, 'pubmed', 'title', _canonical_query_key('title', norm_title), norm_title, doi, pmid, arxiv_id, first_author_family, venue_guess, year_guess)
-        )
-        intents.append(
-            ProviderIntent(candidate_id, 'europepmc', 'title', _canonical_query_key('title', norm_title), norm_title, doi, pmid, arxiv_id, first_author_family, venue_guess, year_guess)
-        )
+    if _provider_enabled(settings, 'pubmed', True):
+        if pmid:
+            intents.append(
+                ProviderIntent(candidate_id, 'pubmed', 'pmid', _canonical_query_key('pmid', pmid), norm_title, doi, pmid, arxiv_id, first_author_family, venue_guess, year_guess)
+            )
+        elif norm_title and not doi and is_biomedical:
+            intents.append(
+                ProviderIntent(candidate_id, 'pubmed', 'title', _canonical_query_key('title', norm_title), norm_title, doi, pmid, arxiv_id, first_author_family, venue_guess, year_guess)
+            )
 
-    if _is_arxiv_native(arxiv_id, norm_title):
-        arxiv_query_type = 'arxiv_id' if arxiv_id else 'title'
-        arxiv_query_key = _canonical_query_key(arxiv_query_type if arxiv_query_type != 'arxiv_id' else 'title', arxiv_id or norm_title)
-        intents.append(
-            ProviderIntent(candidate_id, 'arxiv', arxiv_query_type, arxiv_query_key, norm_title, doi, pmid, arxiv_id, first_author_family, venue_guess, year_guess)
-        )
+    if _provider_enabled(settings, 'europepmc', True):
+        europepmc_trigger_mode = str(_provider_value(settings, 'europepmc', 'trigger_mode', 'narrowed_biomedical_fallback') or 'narrowed_biomedical_fallback')
+        if pmid:
+            intents.append(
+                ProviderIntent(candidate_id, 'europepmc', 'pmid', _canonical_query_key('pmid', pmid), norm_title, doi, pmid, arxiv_id, first_author_family, venue_guess, year_guess)
+            )
+        elif norm_title and is_biomedical:
+            allow_title_fallback = not doi and europepmc_trigger_mode in {'narrowed_biomedical_fallback', 'broad_biomedical'}
+            allow_doi_biomedical = bool(doi) and europepmc_trigger_mode == 'broad_biomedical'
+            if allow_title_fallback or allow_doi_biomedical:
+                query_type = 'doi' if allow_doi_biomedical and doi else 'title'
+                query_key = _canonical_query_key(query_type, doi if query_type == 'doi' else norm_title)
+                intents.append(
+                    ProviderIntent(candidate_id, 'europepmc', query_type, query_key, norm_title, doi, pmid, arxiv_id, first_author_family, venue_guess, year_guess)
+                )
+
+    if _provider_enabled(settings, 'arxiv', True):
+        arxiv_trigger_mode = str(_provider_value(settings, 'arxiv', 'trigger_mode', 'arxiv_native_only') or 'arxiv_native_only')
+        should_run_arxiv = _is_arxiv_native(arxiv_id, norm_title) if arxiv_trigger_mode == 'arxiv_native_only' else bool(arxiv_id or norm_title)
+        if should_run_arxiv:
+            arxiv_query_type = 'arxiv_id' if arxiv_id else 'title'
+            arxiv_query_key = _canonical_query_key(arxiv_query_type if arxiv_query_type != 'arxiv_id' else 'title', arxiv_id or norm_title)
+            intents.append(
+                ProviderIntent(candidate_id, 'arxiv', arxiv_query_type, arxiv_query_key, norm_title, doi, pmid, arxiv_id, first_author_family, venue_guess, year_guess)
+            )
     return intents
 
 
@@ -168,12 +186,16 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
 
         all_intents: list[ProviderIntent] = []
         for row in rows:
-            all_intents.extend(_build_provider_intents(row))
+            all_intents.extend(_build_provider_intents(settings, row))
 
         runnable_intents = [intent for intent in all_intents if _should_run_provider(repo, conn, intent)]
         logger.info('Planned %s provider intent(s); %s need work', len(all_intents), len(runnable_intents))
 
-        openalex_doi_intents = [intent for intent in runnable_intents if intent.provider == 'openalex' and intent.query_type == 'doi' and intent.doi]
+        openalex_doi_batch_enabled = bool(_provider_value(settings, 'openalex', 'doi_batch_enabled', True))
+        openalex_doi_intents = [
+            intent for intent in runnable_intents
+            if openalex_doi_batch_enabled and intent.provider == 'openalex' and intent.query_type == 'doi' and intent.doi
+        ]
         handled_openalex_candidates: set[str] = set()
         if openalex_doi_intents:
             doi_to_candidate_ids: dict[str, list[str]] = {}

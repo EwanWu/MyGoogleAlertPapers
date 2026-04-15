@@ -1,0 +1,34 @@
+profile_name: conditional_sources_v2
+summary: Current narrowed conditional-source strategy baseline for replay validation.
+notes:
+  - Crossref -> OpenAlex -> Semantic Scholar as main DOI/title path
+  - PubMed as fallback-only for title/venue/doi and stronger for PMID-led biomedical resolution
+  - Europe PMC as narrowed biomedical bridge/fallback
+  - arXiv as narrow-trigger source for arXiv-native candidates
+provider_rules:
+  crossref:
+    enabled: true
+  openalex:
+    enabled: true
+    doi_batch_enabled: true
+  semanticscholar:
+    enabled: true
+  pubmed:
+    enabled: true
+    fallback_only_for_core_fields: true
+  europepmc:
+    enabled: true
+    trigger_mode: narrowed_biomedical_fallback
+  arxiv:
+    enabled: true
+    trigger_mode: arxiv_native_only
+merge_rules:
+  pubmed_title_doi_suppression: true
+  normalized_only_fallback: true
+  future_rule_registry: pending
+replay_defaults:
+  stages:
+    - normalize
+    - enrich
+    - merge
+    - dedup

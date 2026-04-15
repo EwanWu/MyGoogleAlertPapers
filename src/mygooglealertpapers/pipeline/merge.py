@@ -363,7 +363,7 @@ def _merge_confidence(conflict_assessment: dict) -> float:
     return 0.45
 
 
-def _pick_preferred(rows, field: str):
+def _pick_preferred(rows, field: str, *, pubmed_fallback_only_for_core_fields: bool = True):
     candidates = []
     trace_candidates = []
     for r in rows:
@@ -373,7 +373,7 @@ def _pick_preferred(rows, field: str):
         source_name = r['source_name']
         query_type = r.get('query_type')
         trace_candidates.append((value, source_name, query_type))
-        if source_name == 'pubmed' and field not in PUBMED_FALLBACK_FIELDS:
+        if pubmed_fallback_only_for_core_fields and source_name == 'pubmed' and field not in PUBMED_FALLBACK_FIELDS:
             continue
         score = SOURCE_PRIORITY.get(source_name, 0)
         if field in {'doi', 'pmid', 'pmcid'}:
@@ -391,6 +391,9 @@ def _pick_preferred(rows, field: str):
 def build_merged_metadata(settings: Settings, *, limit: int) -> None:
     repo = Repository(settings.sqlite_path)
     tracker = CostTracker(repo, settings.sqlite_path)
+    normalized_only_fallback = bool(settings.policy_profile.merge_value('normalized_only_fallback', False))
+    pubmed_title_doi_suppression_enabled = bool(settings.policy_profile.merge_value('pubmed_title_doi_suppression', True))
+    pubmed_fallback_only_for_core_fields = bool(settings.policy_profile.provider_value('pubmed', 'fallback_only_for_core_fields', True))
     run_id = 'merge_metadata_' + uuid.uuid4().hex[:12]
     started_at = time.perf_counter()
     with repo.connect() as conn:
@@ -418,9 +421,6 @@ def build_merged_metadata(settings: Settings, *, limit: int) -> None:
                 """,
                 (candidate_id,),
             ).fetchall()
-            if not src_rows:
-                tracker.record_stage_cost(conn, stage='merge_metadata', status='no_sources', candidate_id=candidate_id)
-                continue
 
             fallback_row = conn.execute(
                 '''
@@ -447,23 +447,63 @@ def build_merged_metadata(settings: Settings, *, limit: int) -> None:
             else:
                 norm_title = norm_authors_json = norm_venue_guess = norm_year_guess = norm_doi = norm_pmid = norm_pmcid = norm_url = None
 
-            adjusted_rows, suppressed_signals = _apply_pubmed_doi_suppression(
-                dict_rows,
-                candidate_venue=norm_venue_guess,
-                candidate_year=norm_year_guess,
-                candidate_url=norm_url,
-                candidate_pmcid=norm_pmcid,
-            )
-            preferred_title, title_trace = _pick_preferred(adjusted_rows, 'title')
-            preferred_authors_json, authors_trace = _pick_preferred(adjusted_rows, 'authors_json')
-            preferred_abstract, abstract_trace = _pick_preferred(adjusted_rows, 'abstract')
-            preferred_venue, venue_trace = _pick_preferred(adjusted_rows, 'venue')
-            preferred_year, year_trace = _pick_preferred(adjusted_rows, 'year')
-            preferred_doi, doi_trace = _pick_preferred(adjusted_rows, 'doi')
-            preferred_pmid, pmid_trace = _pick_preferred(adjusted_rows, 'pmid')
-            preferred_publication_type, type_trace = _pick_preferred(adjusted_rows, 'publication_type')
+            if not src_rows:
+                if not normalized_only_fallback or not fallback_row:
+                    tracker.record_stage_cost(conn, stage='merge_metadata', status='no_sources', candidate_id=candidate_id)
+                    continue
+                preferred_title = norm_title
+                preferred_authors_json = norm_authors_json
+                preferred_abstract = None
+                preferred_venue = norm_venue_guess
+                preferred_year = norm_year_guess
+                preferred_doi = norm_doi
+                preferred_pmid = norm_pmid
+                preferred_publication_type = None
+                title_trace = [f'normalized[candidate]:{norm_title}'] if norm_title else []
+                authors_trace = [f'normalized[candidate]:{norm_authors_json}'] if norm_authors_json else []
+                abstract_trace = []
+                venue_trace = [f'normalized[candidate]:{norm_venue_guess}'] if norm_venue_guess else []
+                year_trace = [f'normalized[candidate]:{norm_year_guess}'] if norm_year_guess else []
+                doi_trace = [f'normalized[candidate]:{norm_doi}'] if norm_doi else []
+                pmid_trace = [f'normalized[candidate]:{norm_pmid}'] if norm_pmid else []
+                type_trace = []
+                suppressed_signals = []
+                conflict_assessment = {
+                    'raw_conflicts': {},
+                    'graded_conflicts': {},
+                    'conflict_grade_max': 'fallback_only',
+                    'severe_conflict_fields': [],
+                    'canonical_blocked': False,
+                    'canonical_block_reason': None,
+                    'suppressed_signals': [],
+                    'fallback_mode': 'normalized_only',
+                }
+                merge_confidence = 0.15
+                stage_status = 'fallback_only'
+            else:
+                adjusted_rows, suppressed_signals = (
+                    _apply_pubmed_doi_suppression(
+                        dict_rows,
+                        candidate_venue=norm_venue_guess,
+                        candidate_year=norm_year_guess,
+                        candidate_url=norm_url,
+                        candidate_pmcid=norm_pmcid,
+                    )
+                    if pubmed_title_doi_suppression_enabled
+                    else (dict_rows, [])
+                )
+                preferred_title, title_trace = _pick_preferred(adjusted_rows, 'title', pubmed_fallback_only_for_core_fields=pubmed_fallback_only_for_core_fields)
+                preferred_authors_json, authors_trace = _pick_preferred(adjusted_rows, 'authors_json', pubmed_fallback_only_for_core_fields=pubmed_fallback_only_for_core_fields)
+                preferred_abstract, abstract_trace = _pick_preferred(adjusted_rows, 'abstract', pubmed_fallback_only_for_core_fields=pubmed_fallback_only_for_core_fields)
+                preferred_venue, venue_trace = _pick_preferred(adjusted_rows, 'venue', pubmed_fallback_only_for_core_fields=pubmed_fallback_only_for_core_fields)
+                preferred_year, year_trace = _pick_preferred(adjusted_rows, 'year', pubmed_fallback_only_for_core_fields=pubmed_fallback_only_for_core_fields)
+                preferred_doi, doi_trace = _pick_preferred(adjusted_rows, 'doi', pubmed_fallback_only_for_core_fields=pubmed_fallback_only_for_core_fields)
+                preferred_pmid, pmid_trace = _pick_preferred(adjusted_rows, 'pmid', pubmed_fallback_only_for_core_fields=pubmed_fallback_only_for_core_fields)
+                preferred_publication_type, type_trace = _pick_preferred(adjusted_rows, 'publication_type', pubmed_fallback_only_for_core_fields=pubmed_fallback_only_for_core_fields)
 
-            conflict_assessment = _build_conflict_assessment(adjusted_rows, ['title', 'venue', 'year', 'doi', 'pmid'], suppressed_signals=suppressed_signals)
+                conflict_assessment = _build_conflict_assessment(adjusted_rows, ['title', 'venue', 'year', 'doi', 'pmid'], suppressed_signals=suppressed_signals)
+                merge_confidence = _merge_confidence(conflict_assessment)
+                stage_status = 'blocked' if conflict_assessment.get('canonical_blocked') else 'ok'
 
             conn.execute(
                 """
@@ -496,15 +536,16 @@ def build_merged_metadata(settings: Settings, *, limit: int) -> None:
                         'pmid': pmid_trace,
                         'type': type_trace,
                         'suppressed_signals': suppressed_signals,
+                        'fallback_mode': 'normalized_only' if stage_status == 'fallback_only' else None,
                     }, ensure_ascii=False),
                     json.dumps(conflict_assessment, ensure_ascii=False) if conflict_assessment else '{}',
-                    _merge_confidence(conflict_assessment),
+                    merge_confidence,
                 ),
             )
             tracker.record_stage_cost(
                 conn,
                 stage='merge_metadata',
-                status='blocked' if conflict_assessment.get('canonical_blocked') else 'ok',
+                status=stage_status,
                 candidate_id=candidate_id,
                 notes=json.dumps(conflict_assessment, ensure_ascii=False) if conflict_assessment else None,
             )

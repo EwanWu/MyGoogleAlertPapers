@@ -61,8 +61,13 @@ def clean_doi(doi: str | None) -> str | None:
     if not doi:
         return None
     value = doi.strip().lower()
+    if value.startswith('https://doi.org/'):
+        value = value[len('https://doi.org/'):]
+    value = re.sub(r'/\d+/\d+/[^/]+\.pdf$', '', value, flags=re.IGNORECASE)
+    value = re.sub(r'/\d{5,}/[^/]+\.pdf$', '', value, flags=re.IGNORECASE)
+    value = re.sub(r'(/download|/full\.pdf|_reference\.pdf|\.pdf)$', '', value, flags=re.IGNORECASE)
     for suffix in ['/full', '/abstract', '/pdf']:
         if value.endswith(suffix):
             value = value[: -len(suffix)]
-    value = value.rstrip(' .;,')
+    value = value.rstrip(' ./;,')
     return value or None

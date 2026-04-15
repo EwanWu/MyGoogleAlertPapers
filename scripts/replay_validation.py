@@ -1,0 +1,263 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import json
+import shutil
+import sqlite3
+import subprocess
+import sys
+from collections.abc import Iterable
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
+
+DIRTY_DOI_SQL = """
+SELECT COUNT(*)
+FROM paper_candidate_normalized
+WHERE doi_extracted LIKE '%.pdf%'
+   OR doi_extracted LIKE '%/download%'
+   OR doi_extracted LIKE '%_reference.pdf%'
+"""
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Replay validation on a fixed candidate set")
+    parser.add_argument("--source-db", required=True, help="Baseline DB containing the candidate set")
+    parser.add_argument("--output-db", required=True, help="Replay DB to create/reset and execute against")
+    parser.add_argument("--policy-profile", required=True, help="Policy profile YAML path")
+    parser.add_argument("--report-out", required=True, help="Where to write the replay summary JSON")
+    parser.add_argument("--limit", type=int, default=1000000, help="Candidate limit for stage reruns")
+    parser.add_argument(
+        "--stages",
+        nargs="+",
+        default=["enrich", "merge", "dedup"],
+        choices=["normalize", "enrich", "merge", "dedup"],
+        help="Stages to rerun",
+    )
+    parser.add_argument("--python", default="python3", help="Python interpreter for mgap CLI calls")
+    parser.add_argument("--workspace", default=None, help="Project root, auto-detected when omitted")
+    return parser.parse_args()
+
+
+def reset_tables(conn: sqlite3.Connection, tables: Iterable[str]) -> None:
+    conn.execute("PRAGMA foreign_keys = OFF")
+    for table in tables:
+        conn.execute(f"DELETE FROM {table}")
+    conn.commit()
+
+
+def tables_for_stages(stages: list[str]) -> list[str]:
+    ordered: list[str] = []
+
+    def add(*tables: str) -> None:
+        for table in tables:
+            if table not in ordered:
+                ordered.append(table)
+
+    if "normalize" in stages:
+        add("paper_candidate_normalized")
+    if "normalize" in stages or "enrich" in stages:
+        add("query_cache", "source_record", "candidate_enrichment_status")
+    if any(stage in stages for stage in ["normalize", "enrich", "merge"]):
+        add("merged_metadata_proposal", "merge_review_queue")
+    if any(stage in stages for stage in ["normalize", "enrich", "merge", "dedup"]):
+        add("canonical_paper", "candidate_paper_link")
+    add("cost_event", "batch_run")
+    return ordered
+
+
+def count_scalar(conn: sqlite3.Connection, sql: str) -> int:
+    row = conn.execute(sql).fetchone()
+    return int(row[0] or 0) if row else 0
+
+
+def provider_summary(conn: sqlite3.Connection) -> list[dict[str, object]]:
+    rows = conn.execute(
+        """
+        SELECT COALESCE(provider, 'none') AS provider,
+               COUNT(*) AS events,
+               COALESCE(SUM(latency_ms),0) AS total_latency_ms,
+               COALESCE(SUM(estimated_cost_usd),0) AS estimated_cost_usd
+        FROM cost_event
+        GROUP BY COALESCE(provider, 'none')
+        ORDER BY provider
+        """
+    ).fetchall()
+    return [
+        {
+            "provider": row[0],
+            "events": int(row[1]),
+            "total_latency_ms": int(row[2] or 0),
+            "estimated_cost_usd": float(row[3] or 0.0),
+        }
+        for row in rows
+    ]
+
+
+def severe_doi_conflict_count(conn: sqlite3.Connection) -> int:
+    rows = conn.execute("SELECT conflict_flags_json FROM merged_metadata_proposal").fetchall()
+    count = 0
+    for (payload,) in rows:
+        if not payload:
+            continue
+        try:
+            data = json.loads(payload)
+        except Exception:
+            continue
+        graded = data.get("graded_conflicts") or {}
+        doi = graded.get("doi") or {}
+        if doi.get("grade") == "C":
+            count += 1
+    return count
+
+
+def normalized_only_fallback_count(conn: sqlite3.Connection) -> int:
+    rows = conn.execute("SELECT source_priority_trace, conflict_flags_json FROM merged_metadata_proposal").fetchall()
+    count = 0
+    for source_priority_trace, conflict_flags_json in rows:
+        payloads = [source_priority_trace, conflict_flags_json]
+        for payload in payloads:
+            if not payload:
+                continue
+            try:
+                data = json.loads(payload)
+            except Exception:
+                continue
+            if data.get("fallback_mode") == "normalized_only":
+                count += 1
+                break
+    return count
+
+
+def run_mgap(project_root: Path, python_bin: str, sqlite_path: Path, policy_profile: Path, command: str, limit: int) -> None:
+    env = dict(**__import__("os").environ)
+    env["SQLITE_PATH"] = str(sqlite_path)
+    env["MGAP_POLICY_PROFILE"] = str(policy_profile)
+    env["PYTHONPATH"] = str(project_root / 'src')
+    cmd = [python_bin, "-m", "mygooglealertpapers.cli", command, "--limit", str(limit)]
+    subprocess.run(cmd, cwd=project_root, env=env, check=True)
+
+
+def render_markdown(summary: dict[str, object]) -> str:
+    provider_lines = []
+    for row in summary["provider_summary"]:
+        provider_lines.append(
+            f"- {row['provider']}: events={row['events']}, total_latency_ms={row['total_latency_ms']}, estimated_cost_usd={row['estimated_cost_usd']:.6f}"
+        )
+    llm = summary.get("paid_llm_usage") or {}
+    return "\n".join(
+        [
+            f"# Replay validation report: {summary['policy_profile_name']}",
+            "",
+            "## Run context",
+            f"- source_db: `{summary['source_db']}`",
+            f"- output_db: `{summary['output_db']}`",
+            f"- policy_profile: `{summary['policy_profile']}`",
+            f"- stages: `{', '.join(summary['stages'])}`",
+            "",
+            "## Candidate and normalization summary",
+            f"- source_candidate_count: `{summary['source_candidate_count']}`",
+            f"- replay_candidate_count: `{summary['replay_candidate_count']}`",
+            f"- normalized_candidate_count: `{summary['normalized_candidate_count']}`",
+            f"- dirty_doi_source_count: `{summary['dirty_doi_source_count']}`",
+            f"- dirty_doi_output_count: `{summary['dirty_doi_output_count']}`",
+            f"- dirty_doi_repaired_count: `{summary['dirty_doi_repaired_count']}`",
+            "",
+            "## Replay output summary",
+            f"- provider_intent_count: `{summary['provider_intent_count']}`",
+            f"- source_record_count: `{summary['source_record_count']}`",
+            f"- matched_source_record_count: `{summary['matched_source_record_count']}`",
+            f"- merged_metadata_proposal_count: `{summary['merged_metadata_proposal_count']}`",
+            f"- normalized_only_fallback_proposal_count: `{summary['normalized_only_fallback_proposal_count']}`",
+            f"- canonical_paper_count: `{summary['canonical_paper_count']}`",
+            f"- merge_review_queue_count: `{summary['merge_review_queue_count']}`",
+            f"- severe_doi_conflict_count: `{summary['severe_doi_conflict_count']}`",
+            "",
+            "## Runtime and accounting",
+            f"- total_batch_duration_ms: `{summary['total_batch_duration_ms']}`",
+            f"- total_provider_latency_ms: `{summary['total_provider_latency_ms']}`",
+            f"- cost_event_count: `{summary['cost_event_count']}`",
+            f"- batch_run_count: `{summary['batch_run_count']}`",
+            f"- paid_llm_usage_present: `{llm.get('present', False)}`",
+            f"- paid_llm_note: `{llm.get('note', 'n/a')}`",
+            "",
+            "## Provider summary",
+            *provider_lines,
+        ]
+    ) + "\n"
+
+
+def main() -> None:
+    args = parse_args()
+    project_root = Path(args.workspace).resolve() if args.workspace else Path(__file__).resolve().parents[1]
+    source_db = Path(args.source_db).resolve()
+    output_db = Path(args.output_db).resolve()
+    policy_profile = Path(args.policy_profile).resolve()
+    report_out = Path(args.report_out).resolve()
+    markdown_out = report_out.with_suffix('.md')
+
+    if not source_db.exists():
+        raise SystemExit(f"source db not found: {source_db}")
+    if not policy_profile.exists():
+        raise SystemExit(f"policy profile not found: {policy_profile}")
+
+    output_db.parent.mkdir(parents=True, exist_ok=True)
+    report_out.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source_db, output_db)
+
+    with sqlite3.connect(output_db) as conn:
+        source_candidate_count = count_scalar(conn, "SELECT COUNT(*) FROM paper_candidate")
+        replay_candidate_count = count_scalar(conn, "SELECT COUNT(*) FROM paper_candidate_normalized")
+        dirty_doi_source_count = count_scalar(conn, DIRTY_DOI_SQL)
+        reset_tables(conn, tables_for_stages(args.stages))
+
+    if "normalize" in args.stages:
+        run_mgap(project_root, args.python, output_db, policy_profile, "normalize-candidates", args.limit)
+    if "enrich" in args.stages:
+        run_mgap(project_root, args.python, output_db, policy_profile, "enrich-candidates", args.limit)
+    if "merge" in args.stages:
+        run_mgap(project_root, args.python, output_db, policy_profile, "merge-metadata", args.limit)
+    if "dedup" in args.stages:
+        run_mgap(project_root, args.python, output_db, policy_profile, "dedup-candidates", args.limit)
+
+    with sqlite3.connect(output_db) as conn:
+        dirty_doi_output_count = count_scalar(conn, DIRTY_DOI_SQL)
+        summary = {
+            "source_db": str(source_db),
+            "output_db": str(output_db),
+            "policy_profile": str(policy_profile),
+            "policy_profile_name": policy_profile.stem,
+            "stages": args.stages,
+            "source_candidate_count": source_candidate_count,
+            "replay_candidate_count": replay_candidate_count,
+            "normalized_candidate_count": count_scalar(conn, "SELECT COUNT(*) FROM paper_candidate_normalized"),
+            "dirty_doi_source_count": dirty_doi_source_count,
+            "dirty_doi_output_count": dirty_doi_output_count,
+            "dirty_doi_repaired_count": max(dirty_doi_source_count - dirty_doi_output_count, 0),
+            "provider_intent_count": count_scalar(conn, "SELECT COUNT(*) FROM candidate_enrichment_status"),
+            "source_record_count": count_scalar(conn, "SELECT COUNT(*) FROM source_record"),
+            "matched_source_record_count": count_scalar(conn, "SELECT COUNT(*) FROM source_record WHERE matched = 1"),
+            "merged_metadata_proposal_count": count_scalar(conn, "SELECT COUNT(*) FROM merged_metadata_proposal"),
+            "normalized_only_fallback_proposal_count": normalized_only_fallback_count(conn),
+            "canonical_paper_count": count_scalar(conn, "SELECT COUNT(*) FROM canonical_paper"),
+            "merge_review_queue_count": count_scalar(conn, "SELECT COUNT(*) FROM merge_review_queue"),
+            "cost_event_count": count_scalar(conn, "SELECT COUNT(*) FROM cost_event"),
+            "batch_run_count": count_scalar(conn, "SELECT COUNT(*) FROM batch_run"),
+            "severe_doi_conflict_count": severe_doi_conflict_count(conn),
+            "total_batch_duration_ms": count_scalar(conn, "SELECT COALESCE(SUM(duration_ms),0) FROM batch_run"),
+            "total_provider_latency_ms": count_scalar(conn, "SELECT COALESCE(SUM(latency_ms),0) FROM cost_event WHERE provider IS NOT NULL"),
+            "provider_summary": provider_summary(conn),
+            "paid_llm_usage": {
+                "present": False,
+                "note": "No paid LLM call path was exercised in this replay run.",
+            },
+        }
+
+    report_out.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
+    markdown_out.write_text(render_markdown(summary), encoding="utf-8")
+    print(json.dumps(summary, ensure_ascii=False, indent=2))
+
+
+if __name__ == "__main__":
+    main()

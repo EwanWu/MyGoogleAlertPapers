@@ -8,6 +8,28 @@ from dotenv import dotenv_values, load_dotenv
 
 
 @dataclass(slots=True)
+class PolicyProfile:
+    name: str
+    path: Path | None
+    provider_rules: dict[str, dict[str, object]]
+    merge_rules: dict[str, object]
+    replay_defaults: dict[str, object]
+    raw: dict[str, object]
+
+    def provider_enabled(self, provider: str, default: bool = True) -> bool:
+        rule = self.provider_rules.get(provider) or {}
+        value = rule.get('enabled', default)
+        return bool(value)
+
+    def provider_value(self, provider: str, key: str, default: object = None) -> object:
+        rule = self.provider_rules.get(provider) or {}
+        return rule.get(key, default)
+
+    def merge_value(self, key: str, default: object = None) -> object:
+        return self.merge_rules.get(key, default)
+
+
+@dataclass(slots=True)
 class Settings:
     imap_host: str | None
     imap_port: int
@@ -22,6 +44,7 @@ class Settings:
     crossref_mailto: str | None
     openalex_email: str | None
     semantic_scholar_api_key: str | None
+    policy_profile: PolicyProfile
 
 
 def _skill_env_path() -> Path:
@@ -48,6 +71,72 @@ def _load_external_imap_skill_env(account: str | None = None) -> dict[str, str]:
     return result
 
 
+def _default_policy_profile() -> PolicyProfile:
+    raw = {
+        'profile_name': 'builtin_default',
+        'provider_rules': {
+            'crossref': {'enabled': True},
+            'openalex': {'enabled': True, 'doi_batch_enabled': True},
+            'semanticscholar': {'enabled': True},
+            'pubmed': {'enabled': True, 'fallback_only_for_core_fields': True},
+            'europepmc': {'enabled': True, 'trigger_mode': 'narrowed_biomedical_fallback'},
+            'arxiv': {'enabled': True, 'trigger_mode': 'arxiv_native_only'},
+        },
+        'merge_rules': {
+            'pubmed_title_doi_suppression': True,
+            'normalized_only_fallback': False,
+        },
+        'replay_defaults': {
+            'stages': ['enrich', 'merge', 'dedup'],
+        },
+    }
+    return PolicyProfile(
+        name=str(raw['profile_name']),
+        path=None,
+        provider_rules=dict(raw['provider_rules']),
+        merge_rules=dict(raw['merge_rules']),
+        replay_defaults=dict(raw['replay_defaults']),
+        raw=raw,
+    )
+
+
+def _load_policy_profile(path_value: str | None) -> PolicyProfile:
+    default_profile = _default_policy_profile()
+    if not path_value:
+        return default_profile
+
+    path = Path(path_value).expanduser().resolve()
+    if not path.exists():
+        raise FileNotFoundError(f'policy profile not found: {path}')
+
+    try:
+        import yaml
+    except Exception as exc:  # pragma: no cover, depends on runtime packaging
+        raise RuntimeError('PyYAML is required when MGAP_POLICY_PROFILE is set') from exc
+
+    raw = yaml.safe_load(path.read_text(encoding='utf-8')) or {}
+    provider_rules = dict(default_profile.provider_rules)
+    for provider, rule in (raw.get('provider_rules') or {}).items():
+        merged_rule = dict(provider_rules.get(provider) or {})
+        merged_rule.update(rule or {})
+        provider_rules[str(provider)] = merged_rule
+
+    merge_rules = dict(default_profile.merge_rules)
+    merge_rules.update((raw.get('merge_rules') or {}))
+
+    replay_defaults = dict(default_profile.replay_defaults)
+    replay_defaults.update((raw.get('replay_defaults') or {}))
+
+    return PolicyProfile(
+        name=str(raw.get('profile_name') or path.stem),
+        path=path,
+        provider_rules=provider_rules,
+        merge_rules=merge_rules,
+        replay_defaults=replay_defaults,
+        raw=raw,
+    )
+
+
 def load_settings() -> Settings:
     load_dotenv()
     workspace_root = Path(__file__).resolve().parents[2]
@@ -59,6 +148,7 @@ def load_settings() -> Settings:
     imap_username = os.getenv("IMAP_USERNAME") or external_imap_env.get("IMAP_USERNAME")
     imap_password = os.getenv("IMAP_PASSWORD") or external_imap_env.get("IMAP_PASSWORD")
     imap_mailbox = os.getenv("IMAP_MAILBOX") or external_imap_env.get("IMAP_MAILBOX") or "INBOX"
+    policy_profile = _load_policy_profile(os.getenv('MGAP_POLICY_PROFILE'))
 
     if os.getenv("IMAP_HOST") or os.getenv("IMAP_USERNAME") or os.getenv("IMAP_PASSWORD"):
         config_source = "project_env"
@@ -82,4 +172,5 @@ def load_settings() -> Settings:
         crossref_mailto=os.getenv('CROSSREF_MAILTO'),
         openalex_email=os.getenv('OPENALEX_EMAIL'),
         semantic_scholar_api_key=os.getenv('SEMANTIC_SCHOLAR_API_KEY'),
+        policy_profile=policy_profile,
     )
