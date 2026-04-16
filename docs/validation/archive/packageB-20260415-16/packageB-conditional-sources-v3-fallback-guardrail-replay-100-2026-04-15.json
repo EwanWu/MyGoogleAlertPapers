@@ -1,0 +1,55 @@
+{
+  "baseline": {
+    "normalized": 249,
+    "source_record": 951,
+    "matched_source_record": 503,
+    "merged": 219,
+    "fallback": 0,
+    "fallback_review": 0,
+    "canonical": 176,
+    "review": 2,
+    "cost_event": 1668
+  },
+  "treatment_v2": {
+    "normalized": 249,
+    "source_record": 951,
+    "matched_source_record": 498,
+    "merged": 249,
+    "fallback": 30,
+    "fallback_review": 0,
+    "canonical": 204,
+    "review": 2,
+    "cost_event": 1698
+  },
+  "treatment_v3": {
+    "normalized": 249,
+    "source_record": 951,
+    "matched_source_record": 498,
+    "merged": 248,
+    "fallback": 29,
+    "fallback_review": 8,
+    "canonical": 195,
+    "review": 10,
+    "cost_event": 497
+  },
+  "delta_v3_vs_v2": {
+    "merged": -1,
+    "fallback": -1,
+    "fallback_review": 8,
+    "canonical": -9,
+    "review": 8
+  },
+  "fallback_guardrail_blocked_ids": [
+    "cand_054270b0fef2b17a",
+    "cand_1d53b41d67c6e37e",
+    "cand_3c0daf67a3c4f756",
+    "cand_505b2326b7b8f0e5",
+    "cand_7237121835e51fe0",
+    "cand_8c0fcffbabdce4e6",
+    "cand_cc340e92866d3360",
+    "cand_e4783c70fe9603a2"
+  ],
+  "fallback_guardrail_rejected_ids": [
+    "cand_400e144162689110"
+  ]
+}

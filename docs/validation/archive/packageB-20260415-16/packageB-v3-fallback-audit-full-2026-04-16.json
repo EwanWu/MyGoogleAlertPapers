@@ -1,0 +1,26 @@
+{
+  "baseline_db": "data/mgap_pkg3_guardrail_100_replay_baseline_guardrail_20260415.db",
+  "treatment_db": "data/mgap_pkg3_guardrail_100_replay_conditional_sources_v3_fallback_guardrail_full_20260416.db",
+  "fallback_row_count": 36,
+  "unique_new_canonical_count": 25,
+  "duplicate_paper_groups": {
+    "paper_2ec899546f5d4153": 2,
+    "null": 8,
+    "paper_5add76e208b04c70": 2,
+    "paper_f7a7c2da7be24de8": 2,
+    "paper_87a894df84fd466a": 2
+  },
+  "baseline_candidate_count": 219,
+  "top_suspicious_candidate_ids": [
+    "cand_7237121835e51fe0",
+    "cand_3c0daf67a3c4f756",
+    "cand_505b2326b7b8f0e5",
+    "cand_e4783c70fe9603a2",
+    "cand_cc340e92866d3360",
+    "cand_8c0fcffbabdce4e6",
+    "cand_054270b0fef2b17a",
+    "cand_1d53b41d67c6e37e",
+    "cand_58d8bc3944e29fbf",
+    "cand_7696ad0277fbf5f0"
+  ]
+}

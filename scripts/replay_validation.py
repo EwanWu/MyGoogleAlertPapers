@@ -37,6 +37,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--python", default="python3", help="Python interpreter for mgap CLI calls")
     parser.add_argument("--workspace", default=None, help="Project root, auto-detected when omitted")
+    parser.add_argument("--stage-timeout-seconds", type=int, default=0, help="Wall-clock timeout for each mgap stage; 0 disables timeout")
     return parser.parse_args()
 
 
@@ -130,13 +131,13 @@ def normalized_only_fallback_count(conn: sqlite3.Connection) -> int:
     return count
 
 
-def run_mgap(project_root: Path, python_bin: str, sqlite_path: Path, policy_profile: Path, command: str, limit: int) -> None:
+def run_mgap(project_root: Path, python_bin: str, sqlite_path: Path, policy_profile: Path, command: str, limit: int, timeout_seconds: int = 0) -> None:
     env = dict(**__import__("os").environ)
     env["SQLITE_PATH"] = str(sqlite_path)
     env["MGAP_POLICY_PROFILE"] = str(policy_profile)
     env["PYTHONPATH"] = str(project_root / 'src')
     cmd = [python_bin, "-m", "mygooglealertpapers.cli", command, "--limit", str(limit)]
-    subprocess.run(cmd, cwd=project_root, env=env, check=True)
+    subprocess.run(cmd, cwd=project_root, env=env, check=True, timeout=timeout_seconds or None)
 
 
 def render_markdown(summary: dict[str, object]) -> str:
@@ -146,6 +147,43 @@ def render_markdown(summary: dict[str, object]) -> str:
             f"- {row['provider']}: events={row['events']}, total_latency_ms={row['total_latency_ms']}, estimated_cost_usd={row['estimated_cost_usd']:.6f}"
         )
     llm = summary.get("paid_llm_usage") or {}
+    if summary.get("status") == "failed":
+        return "\n".join(
+            [
+                f"# Replay validation failure: {summary['policy_profile_name']}",
+                "",
+                "## Run context",
+                f"- source_db: `{summary['source_db']}`",
+                f"- output_db: `{summary['output_db']}`",
+                f"- policy_profile: `{summary['policy_profile']}`",
+                f"- stages: `{', '.join(summary['stages'])}`",
+                "",
+                "## Failure",
+                f"- status: `{summary['status']}`",
+                f"- failed_stage: `{summary.get('failed_stage')}`",
+                f"- error_message: `{summary.get('error_message')}`",
+                "",
+                "## Partial counts at failure",
+                f"- replay_candidate_count: `{summary['replay_candidate_count']}`",
+                f"- provider_intent_count: `{summary['provider_intent_count']}`",
+                f"- source_record_count: `{summary['source_record_count']}`",
+                f"- matched_source_record_count: `{summary['matched_source_record_count']}`",
+                f"- merged_metadata_proposal_count: `{summary['merged_metadata_proposal_count']}`",
+                f"- canonical_paper_count: `{summary['canonical_paper_count']}`",
+                f"- merge_review_queue_count: `{summary['merge_review_queue_count']}`",
+                f"- cost_event_count: `{summary['cost_event_count']}`",
+                f"- batch_run_count: `{summary['batch_run_count']}`",
+                "",
+                "## Runtime and accounting",
+                f"- total_batch_duration_ms: `{summary['total_batch_duration_ms']}`",
+                f"- total_provider_latency_ms: `{summary['total_provider_latency_ms']}`",
+                f"- paid_llm_usage_present: `{llm.get('present', False)}`",
+                f"- paid_llm_note: `{llm.get('note', 'n/a')}`",
+                "",
+                "## Provider summary",
+                *provider_lines,
+            ]
+        ) + "\n"
     return "\n".join(
         [
             f"# Replay validation report: {summary['policy_profile_name']}",
@@ -212,18 +250,35 @@ def main() -> None:
         dirty_doi_source_count = count_scalar(conn, DIRTY_DOI_SQL)
         reset_tables(conn, tables_for_stages(args.stages))
 
-    if "normalize" in args.stages:
-        run_mgap(project_root, args.python, output_db, policy_profile, "normalize-candidates", args.limit)
-    if "enrich" in args.stages:
-        run_mgap(project_root, args.python, output_db, policy_profile, "enrich-candidates", args.limit)
-    if "merge" in args.stages:
-        run_mgap(project_root, args.python, output_db, policy_profile, "merge-metadata", args.limit)
-    if "dedup" in args.stages:
-        run_mgap(project_root, args.python, output_db, policy_profile, "dedup-candidates", args.limit)
+    failed_stage = None
+    error_message = None
+    try:
+        if "normalize" in args.stages:
+            failed_stage = "normalize"
+            run_mgap(project_root, args.python, output_db, policy_profile, "normalize-candidates", args.limit, args.stage_timeout_seconds)
+        if "enrich" in args.stages:
+            failed_stage = "enrich"
+            run_mgap(project_root, args.python, output_db, policy_profile, "enrich-candidates", args.limit, args.stage_timeout_seconds)
+        if "merge" in args.stages:
+            failed_stage = "merge"
+            run_mgap(project_root, args.python, output_db, policy_profile, "merge-metadata", args.limit, args.stage_timeout_seconds)
+        if "dedup" in args.stages:
+            failed_stage = "dedup"
+            run_mgap(project_root, args.python, output_db, policy_profile, "dedup-candidates", args.limit, args.stage_timeout_seconds)
+        failed_stage = None
+    except subprocess.TimeoutExpired as exc:
+        error_message = f"stage timed out after {int(exc.timeout)}s: {' '.join(exc.cmd)}"
+    except subprocess.CalledProcessError as exc:
+        error_message = f"command failed with exit code {exc.returncode}: {' '.join(exc.cmd)}"
+    except Exception as exc:
+        error_message = str(exc)
 
     with sqlite3.connect(output_db) as conn:
         dirty_doi_output_count = count_scalar(conn, DIRTY_DOI_SQL)
         summary = {
+            "status": "failed" if error_message else "ok",
+            "failed_stage": failed_stage,
+            "error_message": error_message,
             "source_db": str(source_db),
             "output_db": str(output_db),
             "policy_profile": str(policy_profile),
@@ -257,6 +312,8 @@ def main() -> None:
     report_out.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
     markdown_out.write_text(render_markdown(summary), encoding="utf-8")
     print(json.dumps(summary, ensure_ascii=False, indent=2))
+    if error_message:
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

@@ -58,3 +58,29 @@ Do not collapse all source outputs directly into a single truth record.
 Instead:
 1. retain source_record per provider
 2. produce merged_metadata_proposal with explicit priority trace and conflict flags
+
+## Enrichment strategy state update (2026-04-16)
+
+The provider-order and field-confidence ideas above are still broadly useful, but recent work showed that enrichment strategy must now be read together with replay policy and orchestration behavior.
+
+### What is now established
+- provider behavior is controlled through policy profiles in real replay runs, not only by static strategy prose
+- enrichment quality must be judged together with downstream merge behavior; more matched source records do not automatically imply better final canonical outcomes
+- long-run enrich stages need explicit operational hardening such as timeout support, progress logging, and checkpoint-friendly execution
+
+### What recent Package work clarified
+- Package A established `conditional_sources_v2` as the current default baseline direction for policy-driven enrich/merge comparison
+- Package B larger-slice replay showed that a policy can slightly increase matched source counts while still degrading final merge/canonical output
+- therefore enrichment strategy evaluation should not stop at provider hit-rate or matched-source counts; it must terminate in proposal/review/canonical outcomes on a fixed seed
+
+### Current operational reading rule
+When evaluating enrichment changes:
+1. compare on the same fixed normalized seed when possible
+2. inspect downstream `merged_metadata_proposal`, `merge_review_queue`, and `canonical_paper` effects
+3. treat smoke runs as execution checks, not final evidence
+4. document orchestration limitations separately from policy-quality conclusions
+
+### Current recommended companion docs
+- `docs/21-packageA-implementation-and-replay-results-2026-04-15.md`
+- `docs/34-packageB-phase-summary-and-archive-guide-2026-04-16.md`
+- `docs/validation/packageB-large-slice150-summary-20260416_slice150.md`

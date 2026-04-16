@@ -252,3 +252,35 @@ Observed results:
 - rerun latency remained very low when no provider work remained
 
 This supports continuing with cache-focused consolidation before moving into deeper correctness work.
+
+## Blueprint alignment note (2026-04-16)
+
+This document should now be read as a **foundational architecture / implementation-intent document**, not as the best single source for current project status.
+
+Use it for:
+- repository/module structure intent
+- early schema and pipeline rationale
+- design continuity
+
+Do **not** use it alone to infer the current decision state of the project.
+Current status and current policy conclusions now live primarily in:
+
+1. `docs/35-project-phase-map-and-current-status-2026-04-16.md`
+2. `docs/33-packageB-decision-memo-2026-04-16.md`
+3. `docs/34-packageB-phase-summary-and-archive-guide-2026-04-16.md`
+
+### Current implementation reality beyond the original blueprint
+
+The project has now moved well beyond the initial coding skeleton described above. In addition to the early blueprint targets, the current codebase includes durable capabilities such as:
+
+- full mailbox -> normalize -> enrich -> merge -> dedup execution
+- profile-driven replay validation
+- provider-level enrichment status tracking
+- stronger query-cache authority semantics
+- conservative merge conflict grading and review queue handling
+- larger-slice replay orchestration hardening, including timeout/progress/checkpoint support
+
+### Interpretation rule
+
+Use this blueprint for structural understanding.
+Use the newer phase-summary and decision documents for current priorities, policy choices, and canonical evidence.

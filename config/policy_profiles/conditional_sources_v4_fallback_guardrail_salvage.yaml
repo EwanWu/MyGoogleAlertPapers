@@ -1,0 +1,37 @@
+profile_name: conditional_sources_v4_fallback_guardrail_salvage
+summary: Conditional-source strategy with fallback guardrails plus author-tail title salvage.
+notes:
+  - Keep Package A conditional-source routing
+  - Preserve normalized-only fallback for recall recovery
+  - Keep minimal fallback guardrails for parser noise and provider mismatch
+  - Add author-tail pollution salvage when cleaned title strongly matches a provider title with identifier support
+provider_rules:
+  crossref:
+    enabled: true
+  openalex:
+    enabled: true
+    doi_batch_enabled: true
+  semanticscholar:
+    enabled: true
+  pubmed:
+    enabled: true
+    fallback_only_for_core_fields: true
+  europepmc:
+    enabled: true
+    trigger_mode: narrowed_biomedical_fallback
+  arxiv:
+    enabled: true
+    trigger_mode: arxiv_native_only
+merge_rules:
+  pubmed_title_doi_suppression: true
+  normalized_only_fallback: true
+  fallback_reject_author_blob: true
+  fallback_review_author_pollution: true
+  fallback_author_pollution_salvage_similarity_threshold: 0.8
+  fallback_review_similarity_threshold: 0.45
+  fallback_review_sparse_metadata_similarity_threshold: 0.5
+replay_defaults:
+  stages:
+    - enrich
+    - merge
+    - dedup

@@ -100,3 +100,32 @@ Before additional provider expansion or new broad validation runs:
 2. use replay to validate the next DOI suppression rule set
 3. populate real monetary cost reporting
 4. reduce orchestration-side polling overhead through batch-run completion gating
+
+## Phase status revision (2026-04-16)
+
+This roadmap remains useful as the long-range structure, but several items above have now moved from planned/in progress into a validated baseline state.
+
+### Delivered enough to treat as current baseline
+- **Phase 1 / 1.1**: mailbox ingest, extraction, normalization skeleton, raw snapshot persistence, and basic reporting are no longer just skeleton work
+- **Phase 2 core**: provider enrichment and `source_record` persistence are implemented, with profile-driven execution behavior rather than placeholder comparison scaffolding
+- **Phase 3 core**: conservative deduplication, `canonical_paper`, `candidate_paper_link`, and `merge_review_queue` are in active use
+- **Phase 3.7 / Package A**: reusable replay validation workflow has been delivered in working form and has already produced decision-relevant same-batch evidence
+
+### Decision reached after Package B
+- the stricter fallback-guardrail exploration has completed its main decision loop
+- current broader/default recommendation returns to `conditional_sources_v2`
+- `conditional_sources_v4_fallback_guardrail_salvage` remains a narrow experimental/diagnostic profile, not the default path
+
+### Revised current implementation priority
+1. test a **very narrow anti-garbage patch** on top of `conditional_sources_v2`
+2. improve monetary cost accounting and explicitly document remaining observability gaps
+3. preserve documentation discipline: keep long-lived summaries current and archive transitional notes
+4. only then consider wider provider/scope expansion
+
+### Execution rule learned from larger-slice runs
+For long replay executions, the current standard should include:
+- stage timeout support
+- enrich progress logging
+- periodic checkpoint commits where useful
+- fixed-seed replay/resume workflow for controlled comparison
+- chained sparse follow-up rather than one-shot completion checks

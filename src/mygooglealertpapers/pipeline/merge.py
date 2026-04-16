@@ -34,6 +34,8 @@ VENUE_ABBREVIATIONS = {
     'bmj open': 'bmj open',
 }
 STOPWORD_TOKENS = {'the', 'of', 'and', 'in', 'for', 'journal'}
+AUTHOR_FOOTNOTE_BLOB_RE = re.compile(r'\b(?:[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2}|[A-Z]{1,4}(?:\s+[A-Z][a-z]+){0,2})\s+\d+\b')
+AUTHOR_CREDENTIAL_RE = re.compile(r'\b(?:phd|msc|md|fmed\s*sci|mbbs|bsc|frcp|mph)\b', re.IGNORECASE)
 
 
 def _clean_text(value: str | None) -> str | None:
@@ -363,6 +365,188 @@ def _merge_confidence(conflict_assessment: dict) -> float:
     return 0.45
 
 
+def _looks_like_author_footnote_blob(title: str | None) -> bool:
+    text = clean_title(title) or ''
+    if not text:
+        return False
+    matches = AUTHOR_FOOTNOTE_BLOB_RE.findall(text)
+    return len(matches) >= 3
+
+
+def _has_author_tail_pollution(title: str | None) -> bool:
+    text = clean_title(title) or ''
+    if not text:
+        return False
+    if AUTHOR_CREDENTIAL_RE.search(text):
+        return True
+    parts = [part.strip() for part in text.split(',') if part.strip()]
+    if len(parts) < 2:
+        return False
+    tail = ', '.join(parts[-2:])
+    titlecase_words = re.findall(r'\b[A-Z][a-z]+\b', tail)
+    if len(titlecase_words) >= 3 and len(parts) >= 3:
+        return True
+    return False
+
+
+def _strip_author_tail_pollution(title: str | None) -> str | None:
+    text = clean_title(title) or ''
+    if not text or not _has_author_tail_pollution(text):
+        return None
+    original = text
+
+    credential_match = AUTHOR_CREDENTIAL_RE.search(text)
+    if credential_match:
+        text = text[:credential_match.start()].rstrip(' ,;')
+
+    text = re.sub(r'(?:,\s*[A-Z][a-z]+(?:\s+[A-Z]\.?)?(?:\s+[A-Z][a-z]+){0,2})+$', '', text).rstrip(' ,;')
+
+    tokens = text.split()
+    trailing_name_tokens = 0
+    while tokens:
+        token = tokens[-1].strip(',.')
+        if re.fullmatch(r'[A-Z][a-z]+', token) or re.fullmatch(r'[A-Z]\.?', token):
+            tokens.pop()
+            trailing_name_tokens += 1
+            continue
+        break
+    if trailing_name_tokens >= 2:
+        text = ' '.join(tokens).rstrip(' ,;')
+
+    text = clean_title(text) or ''
+    return text if text and text != original else None
+
+
+def _best_source_title_match(candidate_title: str | None, rows: list[dict[str, object]]) -> tuple[float, dict[str, object] | None]:
+    candidate = _comparison_text(candidate_title)
+    if not candidate:
+        return 0.0, None
+    best = 0.0
+    best_row = None
+    for row in rows:
+        title = _comparison_text(row.get('title'))
+        if not title:
+            continue
+        score = SequenceMatcher(None, candidate, title).ratio()
+        if score > best:
+            best = score
+            best_row = row
+    return best, best_row
+
+
+def _max_source_title_similarity(candidate_title: str | None, rows: list[dict[str, object]]) -> float:
+    best, _ = _best_source_title_match(candidate_title, rows)
+    return best
+
+
+def _salvage_author_tail_pollution(
+    settings: Settings,
+    *,
+    norm_title: str | None,
+    unmatched_rows: list[dict[str, object]],
+) -> dict[str, object] | None:
+    threshold = settings.policy_profile.merge_value('fallback_author_pollution_salvage_similarity_threshold', None)
+    if threshold is None:
+        return None
+
+    cleaned_title = _strip_author_tail_pollution(norm_title)
+    if not cleaned_title:
+        return None
+
+    raw_similarity, _ = _best_source_title_match(norm_title, unmatched_rows)
+    cleaned_similarity, best_row = _best_source_title_match(cleaned_title, unmatched_rows)
+    if not best_row:
+        return None
+
+    has_supporting_identifier = bool(best_row.get('doi') or best_row.get('pmid') or best_row.get('pmcid'))
+    if cleaned_similarity < float(threshold):
+        return None
+    if cleaned_similarity < raw_similarity + 0.05:
+        return None
+    if not has_supporting_identifier:
+        return None
+
+    return {
+        'cleaned_title': cleaned_title,
+        'raw_title_similarity': round(raw_similarity, 3),
+        'cleaned_title_similarity': round(cleaned_similarity, 3),
+        'matched_source_name': best_row.get('source_name'),
+        'matched_source_title': best_row.get('title'),
+        'matched_source_has_identifier': has_supporting_identifier,
+    }
+
+
+def _normalized_fallback_guardrail(
+    settings: Settings,
+    *,
+    norm_title: str | None,
+    norm_authors_json: str | None,
+    norm_venue_guess: str | None,
+    norm_year_guess: str | None,
+    norm_doi: str | None,
+    norm_pmid: str | None,
+    norm_pmcid: str | None,
+    unmatched_rows: list[dict[str, object]],
+) -> dict[str, object]:
+    has_identifier = bool(norm_doi or norm_pmid or norm_pmcid)
+    max_title_similarity = _max_source_title_similarity(norm_title, unmatched_rows)
+    review_similarity_threshold = settings.policy_profile.merge_value('fallback_review_similarity_threshold', None)
+    sparse_similarity_threshold = settings.policy_profile.merge_value('fallback_review_sparse_metadata_similarity_threshold', None)
+    reject_author_blob = bool(settings.policy_profile.merge_value('fallback_reject_author_blob', False))
+    review_author_pollution = bool(settings.policy_profile.merge_value('fallback_review_author_pollution', False))
+    has_authors = bool(clean_text(norm_authors_json))
+    has_venue = bool(clean_venue(norm_venue_guess))
+    has_year = bool(clean_text(norm_year_guess))
+
+    reasons: list[str] = []
+    decision = 'accept'
+    author_pollution_salvage = None
+
+    if reject_author_blob and _looks_like_author_footnote_blob(norm_title):
+        decision = 'reject'
+        reasons.append('title_looks_like_author_footnote_blob')
+    elif review_author_pollution and _has_author_tail_pollution(norm_title):
+        author_pollution_salvage = _salvage_author_tail_pollution(
+            settings,
+            norm_title=norm_title,
+            unmatched_rows=unmatched_rows,
+        )
+        if author_pollution_salvage:
+            decision = 'accept'
+            reasons.append('title_author_tail_pollution_salvaged')
+        else:
+            decision = 'review'
+            reasons.append('title_has_author_tail_pollution')
+    elif review_similarity_threshold is not None and not has_identifier and max_title_similarity <= float(review_similarity_threshold):
+        decision = 'review'
+        reasons.append('low_source_title_similarity')
+    elif (
+        sparse_similarity_threshold is not None
+        and not has_identifier
+        and not has_authors
+        and not has_venue
+        and not has_year
+        and max_title_similarity < float(sparse_similarity_threshold)
+    ):
+        decision = 'review'
+        reasons.append('sparse_metadata_low_source_title_similarity')
+
+    return {
+        'decision': decision,
+        'reasons': reasons,
+        'has_identifier': has_identifier,
+        'max_source_title_similarity': round(max_title_similarity, 3),
+        'review_similarity_threshold': review_similarity_threshold,
+        'sparse_similarity_threshold': sparse_similarity_threshold,
+        'unmatched_source_count': len(unmatched_rows),
+        'has_authors': has_authors,
+        'has_venue': has_venue,
+        'has_year': has_year,
+        'normalized_title_override': author_pollution_salvage.get('cleaned_title') if author_pollution_salvage else None,
+        'author_pollution_salvage': author_pollution_salvage,
+    }
+
+
 def _pick_preferred(rows, field: str, *, pubmed_fallback_only_for_core_fields: bool = True):
     candidates = []
     trace_candidates = []
@@ -451,7 +635,43 @@ def build_merged_metadata(settings: Settings, *, limit: int) -> None:
                 if not normalized_only_fallback or not fallback_row:
                     tracker.record_stage_cost(conn, stage='merge_metadata', status='no_sources', candidate_id=candidate_id)
                     continue
-                preferred_title = norm_title
+                unmatched_source_rows = [
+                    {
+                        'source_name': r[0], 'query_type': r[1], 'title': r[2], 'authors_json': r[3], 'abstract': r[4],
+                        'venue': r[5], 'year': r[6], 'publication_type': r[7], 'doi': r[8],
+                        'pmid': r[9], 'pmcid': r[10], 'url': r[11], 'matched': r[12]
+                    }
+                    for r in conn.execute(
+                        """
+                        SELECT source_name, query_type, title, authors_json, abstract, venue, year,
+                               publication_type, doi, pmid, pmcid, url, matched
+                        FROM source_record
+                        WHERE candidate_id = ?
+                        """,
+                        (candidate_id,),
+                    ).fetchall()
+                ]
+                fallback_guardrail = _normalized_fallback_guardrail(
+                    settings,
+                    norm_title=norm_title,
+                    norm_authors_json=norm_authors_json,
+                    norm_venue_guess=norm_venue_guess,
+                    norm_year_guess=norm_year_guess,
+                    norm_doi=norm_doi,
+                    norm_pmid=norm_pmid,
+                    norm_pmcid=norm_pmcid,
+                    unmatched_rows=unmatched_source_rows,
+                )
+                if fallback_guardrail['decision'] == 'reject':
+                    tracker.record_stage_cost(
+                        conn,
+                        stage='merge_metadata',
+                        status='fallback_rejected',
+                        candidate_id=candidate_id,
+                        notes=json.dumps({'fallback_mode': 'normalized_only', 'guardrail': fallback_guardrail}, ensure_ascii=False),
+                    )
+                    continue
+                preferred_title = fallback_guardrail.get('normalized_title_override') or norm_title
                 preferred_authors_json = norm_authors_json
                 preferred_abstract = None
                 preferred_venue = norm_venue_guess
@@ -468,18 +688,21 @@ def build_merged_metadata(settings: Settings, *, limit: int) -> None:
                 pmid_trace = [f'normalized[candidate]:{norm_pmid}'] if norm_pmid else []
                 type_trace = []
                 suppressed_signals = []
+                fallback_review = fallback_guardrail['decision'] == 'review'
+                fallback_salvaged = bool(fallback_guardrail.get('author_pollution_salvage'))
                 conflict_assessment = {
                     'raw_conflicts': {},
                     'graded_conflicts': {},
-                    'conflict_grade_max': 'fallback_only',
+                    'conflict_grade_max': 'fallback_salvaged' if fallback_salvaged else ('fallback_review' if fallback_review else 'fallback_only'),
                     'severe_conflict_fields': [],
-                    'canonical_blocked': False,
-                    'canonical_block_reason': None,
+                    'canonical_blocked': fallback_review,
+                    'canonical_block_reason': 'fallback_guardrail:' + ','.join(fallback_guardrail['reasons']) if fallback_review else None,
                     'suppressed_signals': [],
                     'fallback_mode': 'normalized_only',
+                    'fallback_guardrail': fallback_guardrail,
                 }
-                merge_confidence = 0.15
-                stage_status = 'fallback_only'
+                merge_confidence = 0.2 if fallback_salvaged else (0.1 if fallback_review else 0.15)
+                stage_status = 'fallback_salvaged' if fallback_salvaged else ('fallback_review' if fallback_review else 'fallback_only')
             else:
                 adjusted_rows, suppressed_signals = (
                     _apply_pubmed_doi_suppression(
@@ -536,7 +759,7 @@ def build_merged_metadata(settings: Settings, *, limit: int) -> None:
                         'pmid': pmid_trace,
                         'type': type_trace,
                         'suppressed_signals': suppressed_signals,
-                        'fallback_mode': 'normalized_only' if stage_status == 'fallback_only' else None,
+                        'fallback_mode': 'normalized_only' if stage_status in {'fallback_only', 'fallback_review'} else None,
                     }, ensure_ascii=False),
                     json.dumps(conflict_assessment, ensure_ascii=False) if conflict_assessment else '{}',
                     merge_confidence,

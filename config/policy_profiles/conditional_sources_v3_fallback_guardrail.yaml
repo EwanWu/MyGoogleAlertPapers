@@ -1,0 +1,36 @@
+profile_name: conditional_sources_v3_fallback_guardrail
+summary: Conditional-source strategy with normalized-only fallback guardrails enabled.
+notes:
+  - Keep Package A conditional-source routing
+  - Preserve normalized-only fallback for recall recovery
+  - Add minimal fallback guardrails for parser noise and provider mismatch
+provider_rules:
+  crossref:
+    enabled: true
+  openalex:
+    enabled: true
+    doi_batch_enabled: true
+  semanticscholar:
+    enabled: true
+  pubmed:
+    enabled: true
+    fallback_only_for_core_fields: true
+  europepmc:
+    enabled: true
+    trigger_mode: narrowed_biomedical_fallback
+  arxiv:
+    enabled: true
+    trigger_mode: arxiv_native_only
+merge_rules:
+  pubmed_title_doi_suppression: true
+  normalized_only_fallback: true
+  fallback_reject_author_blob: true
+  fallback_review_author_pollution: true
+  fallback_review_similarity_threshold: 0.45
+  fallback_review_sparse_metadata_similarity_threshold: 0.5
+replay_defaults:
+  stages:
+    - normalize
+    - enrich
+    - merge
+    - dedup

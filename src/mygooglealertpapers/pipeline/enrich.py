@@ -11,13 +11,15 @@ from mygooglealertpapers.cost.tracker import CostTracker
 from mygooglealertpapers.db.repository import Repository
 from mygooglealertpapers.enrich.base import enrichment_record_from_json, enrichment_record_to_json
 from mygooglealertpapers.enrich.crossref import query_crossref
-from mygooglealertpapers.enrich.openalex import query_openalex, query_openalex_batch_by_doi
+from mygooglealertpapers.enrich.openalex import query_openalex, query_openalex_batch_by_doi, _extract_primary_location_fields
 from mygooglealertpapers.enrich.pubmed import query_pubmed
 from mygooglealertpapers.enrich.semanticscholar import query_semanticscholar
 from mygooglealertpapers.enrich.europepmc import query_europepmc
 from mygooglealertpapers.enrich.arxiv import query_arxiv
 
 logger = logging.getLogger(__name__)
+
+PROGRESS_EVERY = 25
 
 
 @dataclass(slots=True)
@@ -208,6 +210,7 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
             doi_values = list(doi_to_candidate_ids.keys())
             for i in range(0, len(doi_values), 50):
                 chunk = doi_values[i:i + 50]
+                logger.info('OpenAlex DOI batch chunk %s-%s / %s DOI(s)', i + 1, i + len(chunk), len(doi_values))
                 try:
                     results = query_openalex_batch_by_doi(chunk, email=settings.openalex_email)
                 except Exception as exc:
@@ -224,7 +227,7 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
                     if not doi_val or doi_val not in doi_to_candidate_ids:
                         continue
                     authors = [a.get('author', {}).get('display_name') for a in item.get('authorships', []) if a.get('author', {}).get('display_name')]
-                    venue = (item.get('primary_location') or {}).get('source', {}).get('display_name')
+                    venue, url = _extract_primary_location_fields(item)
                     from mygooglealertpapers.enrich.base import EnrichmentRecord
                     for candidate_id in doi_to_candidate_ids[doi_val]:
                         rec = EnrichmentRecord(
@@ -244,7 +247,7 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
                             doi=doi_val,
                             pmid=(ids.get('pmid') or '').replace('https://pubmed.ncbi.nlm.nih.gov/', '').strip('/') or None,
                             pmcid=(ids.get('pmcid') or '').replace('https://www.ncbi.nlm.nih.gov/pmc/articles/', '').strip('/') or None,
-                            url=(item.get('primary_location') or {}).get('landing_page_url'),
+                            url=url,
                             raw_payload_json=json.dumps(item, ensure_ascii=False),
                             latency_ms=0,
                         )
@@ -285,12 +288,21 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
                             repo.finish_enrichment_status(conn, candidate_id=candidate_id, provider='openalex', status='no_match', source_record_id=source_record_id, latency_ms=0, notes='doi_batch_no_match')
                             tracker.record_stage_cost(conn, stage='enrich_candidates', status='no_match', candidate_id=candidate_id, provider='openalex', latency_ms=0, notes='doi_batch_no_match')
                             handled_openalex_candidates.add(candidate_id)
+                conn.commit()
 
         processed_intents = 0
         for intent in runnable_intents:
             if intent.provider == 'openalex' and intent.candidate_id in handled_openalex_candidates and intent.query_type == 'doi':
                 continue
 
+            logger.info(
+                'Enrich intent %s/%s: provider=%s query_type=%s candidate_id=%s',
+                processed_intents + 1,
+                len(runnable_intents),
+                intent.provider,
+                intent.query_type,
+                intent.candidate_id,
+            )
             repo.start_enrichment_status(conn, candidate_id=intent.candidate_id, provider=intent.provider, query_type=intent.query_type, query_key=intent.query_key)
             cached = repo.get_query_cache(conn, provider=intent.provider, query_type=intent.query_type, query_key=intent.query_key)
             if cached:
@@ -300,6 +312,9 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
                 repo.finish_enrichment_status(conn, candidate_id=intent.candidate_id, provider=intent.provider, status=status, source_record_id=source_record_id, cache_hit=True, latency_ms=0)
                 tracker.record_stage_cost(conn, stage='enrich_candidates', status='cache_hit', candidate_id=intent.candidate_id, provider=intent.provider, latency_ms=0)
                 processed_intents += 1
+                if processed_intents % PROGRESS_EVERY == 0:
+                    logger.info('Enrich progress: processed %s / %s runnable intent(s)', processed_intents, len(runnable_intents))
+                    conn.commit()
                 continue
 
             try:
@@ -344,6 +359,9 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
                 repo.finish_enrichment_status(conn, candidate_id=intent.candidate_id, provider=intent.provider, status='error', latency_ms=0, error_summary=str(exc))
                 tracker.record_stage_cost(conn, stage='enrich_candidates', status='error', candidate_id=intent.candidate_id, provider=intent.provider, latency_ms=0, notes=str(exc))
                 processed_intents += 1
+                if processed_intents % PROGRESS_EVERY == 0:
+                    logger.info('Enrich progress: processed %s / %s runnable intent(s)', processed_intents, len(runnable_intents))
+                    conn.commit()
                 continue
 
             if rec is None:
@@ -374,6 +392,9 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
                 repo.finish_enrichment_status(conn, candidate_id=intent.candidate_id, provider=intent.provider, status='no_match', source_record_id=source_record_id, latency_ms=0, notes='no_record_returned')
                 tracker.record_stage_cost(conn, stage='enrich_candidates', status='no_match', candidate_id=intent.candidate_id, provider=intent.provider, latency_ms=0, notes='no_record_returned')
                 processed_intents += 1
+                if processed_intents % PROGRESS_EVERY == 0:
+                    logger.info('Enrich progress: processed %s / %s runnable intent(s)', processed_intents, len(runnable_intents))
+                    conn.commit()
                 continue
 
             repo.put_query_cache(conn, provider=intent.provider, query_type=intent.query_type, query_key=intent.query_key, response_json=enrichment_record_to_json(rec))
@@ -382,6 +403,9 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
             repo.finish_enrichment_status(conn, candidate_id=intent.candidate_id, provider=intent.provider, status=status, source_record_id=source_record_id, cache_hit=False, latency_ms=rec.latency_ms)
             tracker.record_stage_cost(conn, stage='enrich_candidates', status=status, candidate_id=intent.candidate_id, provider=intent.provider, latency_ms=rec.latency_ms)
             processed_intents += 1
+            if processed_intents % PROGRESS_EVERY == 0:
+                logger.info('Enrich progress: processed %s / %s runnable intent(s)', processed_intents, len(runnable_intents))
+                conn.commit()
 
         repo.finish_batch_run(conn, run_id=run_id, duration_ms=int((time.perf_counter() - started_at) * 1000), processed_count=processed_intents, status='ok')
         conn.commit()

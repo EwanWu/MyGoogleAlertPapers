@@ -191,3 +191,25 @@ Suggested fields:
 - latency_ms
 - status
 - notes
+
+## Data-model alignment update (2026-04-16)
+
+The entity layout above still captures the intended structure, but several parts are now better understood from real execution rather than draft-only design.
+
+### Current data-model reality
+- `source_record`, `merged_metadata_proposal`, `canonical_paper`, `candidate_paper_link`, `merge_review_queue`, `candidate_enrichment_status`, `cost_event`, and `batch_run` are all active parts of the running system rather than speculative extensions
+- the project now depends on a clear separation between raw candidate state, normalized candidate state, provider evidence, merged proposal state, and canonicalized paper state
+- replay/validation work has shown that this layering is not cosmetic; it is what makes same-seed policy comparison and conservative rollback possible
+
+### Interpretation update after Package A and Package B
+- `merged_metadata_proposal` should be read as a durable decision boundary, not just a convenience table
+- `merge_review_queue` is now a real correctness mechanism in the data model
+- `candidate_paper_link` is the active bridge from candidate-level work to canonical paper state
+- `cost_event` and `batch_run` currently provide useful technical-resource observability, but should not be mistaken for complete monetary billing data
+
+### Current reading rule
+For current project-state interpretation, pair this draft with:
+
+1. `docs/35-project-phase-map-and-current-status-2026-04-16.md`
+2. `docs/21-packageA-implementation-and-replay-results-2026-04-15.md`
+3. `docs/34-packageB-phase-summary-and-archive-guide-2026-04-16.md`

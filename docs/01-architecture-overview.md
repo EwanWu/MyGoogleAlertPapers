@@ -55,3 +55,26 @@ Cascade queries across:
 - Provenance-preserving
 - Conservative merging
 - LLM fallback only for ambiguity
+
+## Architecture state alignment update (2026-04-16)
+
+The high-level architecture above remains valid, but the project has now moved from architectural intent into a working multi-stage system.
+
+### Modules now proven in real replay/validation use
+- mailbox -> parse -> normalize -> enrich -> merge -> dedup is no longer only conceptual; it has been exercised on real mailbox slices
+- replay validation is now a first-class operational layer rather than an ad hoc script pattern
+- profile-driven execution now affects real enrich/merge behavior in controlled comparisons
+- merge review queue and conservative canonicalization guardrails are active parts of the pipeline, not future design placeholders
+
+### Architecture-level conclusion after Package A and Package B
+- the current broader/default policy baseline should be understood as `conditional_sources_v2`
+- normalized-only fallback is part of the current baseline architecture
+- broad fallback guardrail tightening, as tested in full `v4`, should not be treated as part of the default architecture
+- orchestration hardening for long replays is now part of the practical architecture, including timeout/progress/checkpoint support around larger validations
+
+### Where to read current architecture-in-use
+For current system behavior, pair this overview with:
+
+1. `docs/35-project-phase-map-and-current-status-2026-04-16.md`
+2. `docs/21-packageA-implementation-and-replay-results-2026-04-15.md`
+3. `docs/34-packageB-phase-summary-and-archive-guide-2026-04-16.md`
