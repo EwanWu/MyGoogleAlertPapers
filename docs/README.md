@@ -9,14 +9,24 @@ Read these first when you want the current project state, current decision, and 
 Project-wide entry order:
 
 1. `docs/35-project-phase-map-and-current-status-2026-04-16.md`
-2. `docs/33-packageB-decision-memo-2026-04-16.md`
-3. `docs/34-packageB-phase-summary-and-archive-guide-2026-04-16.md`
-4. `docs/21-packageA-implementation-and-replay-results-2026-04-15.md`
-5. `docs/32-packageB-large-slice150-v2-v4-decision-analysis-2026-04-16.md`
-6. `docs/validation/packageB-large-slice150-summary-20260416_slice150.md`
+2. `docs/38-next-step-execution-memo-2026-04-21.md`
+3. `docs/validation/trackA-author-blob-fb-decision-20260421c.md`
+4. `docs/validation/trackB-unpaywall-decision-memo-20260422.md`
+5. `docs/validation/unpaywall-position-batch50-summary-20260422_batch50-corrected.md`
+6. `docs/38-trackB-unpaywall-integration-status-2026-04-21.md`
+7. `docs/validation/trackB-unpaywall-decision-memo-20260421b.md`
+8. `docs/37-trackA-narrow-antigarbage-decision-memo-2026-04-21.md`
+9. `docs/33-packageB-decision-memo-2026-04-16.md`
+10. `docs/34-packageB-phase-summary-and-archive-guide-2026-04-16.md`
+11. `docs/21-packageA-implementation-and-replay-results-2026-04-15.md`
+12. `docs/32-packageB-large-slice150-v2-v4-decision-analysis-2026-04-16.md`
+13. `docs/validation/trackA-large-slice150-summary-20260421.md`
+14. `docs/validation/packageB-large-slice150-summary-20260416_slice150.md`
 
-Current active Package B layer:
+Current active decision layer:
 
+- `docs/38-next-step-execution-memo-2026-04-21.md`
+- `docs/37-trackA-narrow-antigarbage-decision-memo-2026-04-21.md`
 - `docs/33-packageB-decision-memo-2026-04-16.md`
 - `docs/34-packageB-phase-summary-and-archive-guide-2026-04-16.md`
 - `docs/32-packageB-large-slice150-v2-v4-decision-analysis-2026-04-16.md`

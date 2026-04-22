@@ -324,3 +324,98 @@ class Repository:
             ''',
             (candidate_id, provider, status, source_record_id),
         )
+
+    def get_paper_oa_status(self, conn: sqlite3.Connection, *, paper_id: str, provider: str):
+        return conn.execute(
+            '''
+            SELECT id, status, query_type, query_key, cache_hit, attempt_count,
+                   last_started_at, last_finished_at, latency_ms, error_summary, notes
+            FROM paper_oa_enrichment_status
+            WHERE paper_id = ? AND provider = ?
+            LIMIT 1
+            ''',
+            (paper_id, provider),
+        ).fetchone()
+
+    def start_paper_oa_status(self, conn: sqlite3.Connection, *, paper_id: str, provider: str, query_type: str | None, query_key: str | None, notes: str | None = None) -> None:
+        conn.execute(
+            '''
+            INSERT INTO paper_oa_enrichment_status (
+                paper_id, provider, status, query_type, query_key, cache_hit,
+                attempt_count, last_started_at, notes, updated_at
+            ) VALUES (?, ?, 'pending', ?, ?, 0, 1, CURRENT_TIMESTAMP, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(paper_id, provider) DO UPDATE SET
+                status='pending',
+                query_type=excluded.query_type,
+                query_key=excluded.query_key,
+                attempt_count=paper_oa_enrichment_status.attempt_count + 1,
+                last_started_at=CURRENT_TIMESTAMP,
+                notes=excluded.notes,
+                updated_at=CURRENT_TIMESTAMP
+            ''',
+            (paper_id, provider, query_type, query_key, notes),
+        )
+
+    def finish_paper_oa_status(self, conn: sqlite3.Connection, *, paper_id: str, provider: str, status: str, cache_hit: bool = False, latency_ms: int | None = None, error_summary: str | None = None, notes: str | None = None) -> None:
+        conn.execute(
+            '''
+            UPDATE paper_oa_enrichment_status
+            SET status = ?,
+                cache_hit = ?,
+                last_finished_at = CURRENT_TIMESTAMP,
+                latency_ms = ?,
+                error_summary = ?,
+                notes = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE paper_id = ? AND provider = ?
+            ''',
+            (status, int(cache_hit), latency_ms, error_summary, notes, paper_id, provider),
+        )
+
+    def upsert_paper_open_access(
+        self,
+        conn: sqlite3.Connection,
+        *,
+        paper_id: str,
+        provider: str,
+        doi: str | None,
+        is_oa: bool | None,
+        oa_status: str | None,
+        best_oa_url: str | None,
+        best_oa_host_type: str | None,
+        best_oa_version: str | None,
+        license: str | None,
+        raw_payload_json: str | None,
+    ) -> None:
+        conn.execute(
+            '''
+            INSERT INTO paper_open_access (
+                paper_id, provider, doi, is_oa, oa_status, best_oa_url,
+                best_oa_host_type, best_oa_version, license, raw_payload_json,
+                created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            ON CONFLICT(paper_id) DO UPDATE SET
+                provider=excluded.provider,
+                doi=excluded.doi,
+                is_oa=excluded.is_oa,
+                oa_status=excluded.oa_status,
+                best_oa_url=excluded.best_oa_url,
+                best_oa_host_type=excluded.best_oa_host_type,
+                best_oa_version=excluded.best_oa_version,
+                license=excluded.license,
+                raw_payload_json=excluded.raw_payload_json,
+                updated_at=CURRENT_TIMESTAMP
+            ''',
+            (
+                paper_id,
+                provider,
+                doi,
+                None if is_oa is None else int(is_oa),
+                oa_status,
+                best_oa_url,
+                best_oa_host_type,
+                best_oa_version,
+                license,
+                raw_payload_json,
+            ),
+        )

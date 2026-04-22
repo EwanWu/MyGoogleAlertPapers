@@ -1,0 +1,42 @@
+profile_name: conditional_sources_v2_unpaywall
+summary: >
+  Historical experimental profile: conditional_sources_v2 with Unpaywall added at candidate level as an opt-in OA-enhancement provider.
+  Unpaywall is NOT a bibliographic authority — it only provides OA status and OA URL.
+  It must not override Crossref/OpenAlex/SemanticScholar/PubMed for title, authors,
+  year, venue, or DOI decisions.
+  Default enabled=false so it is only active when explicitly opted in.
+notes:
+  - Unpaywall is DOI-only; it has no title search
+  - SOURCE_PRIORITY for unpaywall is 0 — it never wins bibliographic field selection
+  - The primary value is best_oa_url and is_oa status for OA coverage reporting
+  - This profile tests whether Unpaywall improves OA URL coverage without perturbing canonical correctness
+  - This profile is retained for controlled comparison; production OA enrichment should use post-dedup `mgap enrich-paper-oa`.
+provider_rules:
+  crossref:
+    enabled: true
+  openalex:
+    enabled: true
+    doi_batch_enabled: true
+  semanticscholar:
+    enabled: true
+  pubmed:
+    enabled: true
+    fallback_only_for_core_fields: true
+  europepmc:
+    enabled: true
+    trigger_mode: narrowed_biomedical_fallback
+  arxiv:
+    enabled: true
+    trigger_mode: arxiv_native_only
+  unpaywall:
+    enabled: true
+    # DOI-only; no title-based search
+merge_rules:
+  pubmed_title_doi_suppression: true
+  normalized_only_fallback: true
+replay_defaults:
+  stages:
+    - normalize
+    - enrich
+    - merge
+    - dedup

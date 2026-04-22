@@ -16,6 +16,7 @@ from mygooglealertpapers.enrich.pubmed import query_pubmed
 from mygooglealertpapers.enrich.semanticscholar import query_semanticscholar
 from mygooglealertpapers.enrich.europepmc import query_europepmc
 from mygooglealertpapers.enrich.arxiv import query_arxiv
+from mygooglealertpapers.enrich.unpaywall import query_unpaywall
 
 logger = logging.getLogger(__name__)
 
@@ -124,6 +125,17 @@ def _build_provider_intents(settings: Settings, row) -> list[ProviderIntent]:
             intents.append(
                 ProviderIntent(candidate_id, 'arxiv', arxiv_query_type, arxiv_query_key, norm_title, doi, pmid, arxiv_id, first_author_family, venue_guess, year_guess)
             )
+
+    # Unpaywall candidate-level path is kept only for controlled comparison.
+    # The recommended production path is post-dedup OA enrichment via `enrich-paper-oa`.
+    # It is NOT a bibliographic authority; it only provides OA metadata.
+    # Trigger only when DOI is available — no title-based search.
+    if _provider_enabled(settings, 'unpaywall', False):  # default False = opt-in
+        if doi:
+            intents.append(
+                ProviderIntent(candidate_id, 'unpaywall', 'doi', _canonical_query_key('doi', doi), norm_title, doi, pmid, arxiv_id, first_author_family, venue_guess, year_guess)
+            )
+
     return intents
 
 
@@ -330,6 +342,8 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
                     rec = query_crossref(intent.candidate_id, doi=intent.doi, title=intent.norm_title, first_author_family=intent.first_author_family, venue_hint=intent.venue_guess, query_year=intent.year_guess, mailto=settings.crossref_mailto)
                 elif intent.provider == 'openalex':
                     rec = query_openalex(intent.candidate_id, doi=intent.doi, title=intent.norm_title, first_author_family=intent.first_author_family, venue_hint=intent.venue_guess, query_year=intent.year_guess)
+                elif intent.provider == 'unpaywall':
+                    rec = query_unpaywall(intent.candidate_id, doi=intent.doi, email=settings.unpaywall_email)
                 else:
                     rec = None
             except Exception as exc:

@@ -210,6 +210,43 @@ CREATE TABLE IF NOT EXISTS merge_review_queue (
     updated_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS paper_open_access (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    paper_id TEXT NOT NULL UNIQUE,
+    provider TEXT NOT NULL,
+    doi TEXT,
+    is_oa INTEGER,
+    oa_status TEXT,
+    best_oa_url TEXT,
+    best_oa_host_type TEXT,
+    best_oa_version TEXT,
+    license TEXT,
+    raw_payload_json TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS paper_oa_enrichment_status (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    paper_id TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    status TEXT NOT NULL,
+    query_type TEXT,
+    query_key TEXT,
+    cache_hit INTEGER DEFAULT 0,
+    attempt_count INTEGER DEFAULT 0,
+    last_started_at TEXT,
+    last_finished_at TEXT,
+    latency_ms INTEGER,
+    error_summary TEXT,
+    notes TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_paper_oa_enrichment_status_paper_provider
+ON paper_oa_enrichment_status(paper_id, provider);
+
 CREATE TABLE IF NOT EXISTS cost_event (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     mail_uid TEXT,

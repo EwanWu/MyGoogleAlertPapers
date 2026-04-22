@@ -84,3 +84,23 @@ When evaluating enrichment changes:
 - `docs/21-packageA-implementation-and-replay-results-2026-04-15.md`
 - `docs/34-packageB-phase-summary-and-archive-guide-2026-04-16.md`
 - `docs/validation/packageB-large-slice150-summary-20260416_slice150.md`
+
+## OA enrichment placement update (2026-04-22)
+
+Unpaywall should now be treated as a **post-dedup OA enhancement step**, not as part of the core candidate-level bibliographic enrich cascade.
+
+Operational rule:
+1. use Crossref / OpenAlex / Semantic Scholar / PubMed / Europe PMC / arXiv to build bibliographic evidence
+2. merge and deduplicate first
+3. then run Unpaywall over canonical DOI to fill OA status and OA URL
+
+Reason:
+- Unpaywall does not replace bibliographic providers
+- it adds latency rather than reducing it
+- its main value is OA coverage on the final canonical paper set
+- corrected placement analysis showed `post_dedup` gives much better OA URL coverage than candidate-level lookup, with cleaner semantics than `post_merge`
+
+Recommended command-level shape:
+- `mgap dedup-candidates`
+- `mgap enrich-paper-oa`
+

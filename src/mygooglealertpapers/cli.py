@@ -13,6 +13,7 @@ from mygooglealertpapers.pipeline.merge import build_merged_metadata
 from mygooglealertpapers.pipeline.merge_stats import build_merge_stats
 from mygooglealertpapers.pipeline.dedup import deduplicate_candidates
 from mygooglealertpapers.pipeline.dedup_stats import build_dedup_stats
+from mygooglealertpapers.pipeline.paper_oa import enrich_paper_oa, build_paper_oa_stats
 from mygooglealertpapers.pipeline.report import build_batch_report
 from mygooglealertpapers.pipeline.stats import build_normalization_stats
 from pathlib import Path
@@ -49,8 +50,12 @@ def build_parser() -> argparse.ArgumentParser:
     dedup_parser = subparsers.add_parser("dedup-candidates", help="Deduplicate candidates into canonical papers")
     dedup_parser.add_argument("--limit", type=int, default=100)
 
+    paper_oa_parser = subparsers.add_parser("enrich-paper-oa", help="Enrich canonical papers with post-dedup OA metadata")
+    paper_oa_parser.add_argument("--limit", type=int, default=100)
+
     subparsers.add_parser("report-merge", help="Show merged proposal statistics")
     subparsers.add_parser("report-dedup", help="Show dedup statistics")
+    subparsers.add_parser("report-paper-oa", help="Show post-dedup OA enrichment statistics")
     subparsers.add_parser("report-cost", help="Show cost/timing statistics")
     subparsers.add_parser("report-review-queue", help="Show blocked merge/canonical review queue")
     export_review_parser = subparsers.add_parser("export-review-queue", help="Export blocked merge/canonical review queue as JSONL")
@@ -85,10 +90,14 @@ def main() -> None:
         print(build_enrichment_stats(settings.sqlite_path))
     elif args.command == "dedup-candidates":
         deduplicate_candidates(settings, limit=args.limit)
+    elif args.command == "enrich-paper-oa":
+        enrich_paper_oa(settings, limit=args.limit)
     elif args.command == "report-merge":
         print(build_merge_stats(settings.sqlite_path))
     elif args.command == "report-dedup":
         print(build_dedup_stats(settings.sqlite_path))
+    elif args.command == "report-paper-oa":
+        print(build_paper_oa_stats(settings.sqlite_path))
     elif args.command == "report-cost":
         print(build_cost_stats(settings.sqlite_path))
     elif args.command == "report-review-queue":
