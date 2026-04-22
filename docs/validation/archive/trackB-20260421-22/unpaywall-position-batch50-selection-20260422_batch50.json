@@ -1,0 +1,367 @@
+{
+  "selection_basis": "oldest locally cached Google Scholar alert mails from the large-slice150 seed",
+  "source_seed": "/home/ewan/NewCareer/Openclaw/proj/MyGoogleAlertPapers/data/mgap_pkgB_large_slice150_seed_20260416_slice150.db",
+  "reason_two_month_mail_unavailable": "Live IMAP mailbox access currently fails with EXAMINE Unsafe Login, so this run uses the oldest reproducible locally cached Scholar mails instead.",
+  "selected_mail_count": 50,
+  "selected_uids": [
+    "7876",
+    "7877",
+    "7878",
+    "7879",
+    "7880",
+    "7883",
+    "7884",
+    "7885",
+    "7889",
+    "7890",
+    "7891",
+    "7892",
+    "7893",
+    "7895",
+    "7896",
+    "7897",
+    "7898",
+    "7899",
+    "7901",
+    "7902",
+    "7903",
+    "7904",
+    "7905",
+    "7915",
+    "7916",
+    "7917",
+    "7918",
+    "7920",
+    "7921",
+    "7922",
+    "7923",
+    "7924",
+    "7933",
+    "7934",
+    "7935",
+    "7936",
+    "7937",
+    "7944",
+    "7945",
+    "7946",
+    "7947",
+    "7948",
+    "7952",
+    "7953",
+    "7954",
+    "7955",
+    "7956",
+    "7961",
+    "7962",
+    "7963"
+  ],
+  "date_range": {
+    "start": "18-Mar-2026 21:59:59 +0000",
+    "end": "02-Apr-2026 06:41:39 +0000"
+  },
+  "candidate_count": 188,
+  "normalized_candidate_count": 188,
+  "doi_positive_candidate_count": 88,
+  "mail_rows": [
+    {
+      "mail_uid": "7876",
+      "internal_date": "18-Mar-2026 21:59:59 +0000",
+      "subject": "Ye Qiao - 新的相关研究工作",
+      "num_candidates_extracted": 1
+    },
+    {
+      "mail_uid": "7877",
+      "internal_date": "18-Mar-2026 21:59:59 +0000",
+      "subject": "Frederick Epstein - 新的相关研究工作",
+      "num_candidates_extracted": 7
+    },
+    {
+      "mail_uid": "7878",
+      "internal_date": "18-Mar-2026 21:59:59 +0000",
+      "subject": "Qi Yang - 新的相关研究工作",
+      "num_candidates_extracted": 2
+    },
+    {
+      "mail_uid": "7879",
+      "internal_date": "18-Mar-2026 21:59:59 +0000",
+      "subject": "Qi Yang的文章新增了 1 次引用",
+      "num_candidates_extracted": 1
+    },
+    {
+      "mail_uid": "7880",
+      "internal_date": "18-Mar-2026 21:59:59 +0000",
+      "subject": "Ye Qiao的文章新增了 1 次引用",
+      "num_candidates_extracted": 1
+    },
+    {
+      "mail_uid": "7883",
+      "internal_date": "20-Mar-2026 06:36:30 +0000",
+      "subject": "Qi Yang的文章新增了 2 次引用",
+      "num_candidates_extracted": 2
+    },
+    {
+      "mail_uid": "7884",
+      "internal_date": "20-Mar-2026 06:36:30 +0000",
+      "subject": "Ye Qiao - 新的相关研究工作",
+      "num_candidates_extracted": 3
+    },
+    {
+      "mail_uid": "7885",
+      "internal_date": "20-Mar-2026 06:36:30 +0000",
+      "subject": "Qi Yang - 新的相关研究工作",
+      "num_candidates_extracted": 2
+    },
+    {
+      "mail_uid": "7889",
+      "internal_date": "21-Mar-2026 15:19:06 +0000",
+      "subject": "Qi Yang - 新的相关研究工作",
+      "num_candidates_extracted": 5
+    },
+    {
+      "mail_uid": "7890",
+      "internal_date": "21-Mar-2026 15:19:06 +0000",
+      "subject": "Ye Qiao - 新的相关研究工作",
+      "num_candidates_extracted": 2
+    },
+    {
+      "mail_uid": "7891",
+      "internal_date": "21-Mar-2026 15:19:06 +0000",
+      "subject": "Frederick Epstein - 新的相关研究工作",
+      "num_candidates_extracted": 2
+    },
+    {
+      "mail_uid": "7892",
+      "internal_date": "21-Mar-2026 15:19:06 +0000",
+      "subject": "Ye Qiao的文章新增了 2 次引用",
+      "num_candidates_extracted": 2
+    },
+    {
+      "mail_uid": "7893",
+      "internal_date": "21-Mar-2026 15:19:06 +0000",
+      "subject": "Qi Yang的文章新增了 6 次引用",
+      "num_candidates_extracted": 6
+    },
+    {
+      "mail_uid": "7895",
+      "internal_date": "23-Mar-2026 02:40:13 +0000",
+      "subject": "Qi Yang - 新的相关研究工作",
+      "num_candidates_extracted": 5
+    },
+    {
+      "mail_uid": "7896",
+      "internal_date": "23-Mar-2026 02:40:13 +0000",
+      "subject": "Ye Qiao - 新的相关研究工作",
+      "num_candidates_extracted": 5
+    },
+    {
+      "mail_uid": "7897",
+      "internal_date": "23-Mar-2026 02:40:13 +0000",
+      "subject": "Qi Yang的文章新增了 8 次引用",
+      "num_candidates_extracted": 8
+    },
+    {
+      "mail_uid": "7898",
+      "internal_date": "23-Mar-2026 02:40:13 +0000",
+      "subject": "Frederick Epstein - 新的相关研究工作",
+      "num_candidates_extracted": 5
+    },
+    {
+      "mail_uid": "7899",
+      "internal_date": "23-Mar-2026 02:40:13 +0000",
+      "subject": "Ye Qiao的文章新增了 2 次引用",
+      "num_candidates_extracted": 2
+    },
+    {
+      "mail_uid": "7901",
+      "internal_date": "24-Mar-2026 08:08:58 +0000",
+      "subject": "Ye Qiao - 新的相关研究工作",
+      "num_candidates_extracted": 2
+    },
+    {
+      "mail_uid": "7902",
+      "internal_date": "24-Mar-2026 08:08:58 +0000",
+      "subject": "Qi Yang - 新的相关研究工作",
+      "num_candidates_extracted": 2
+    },
+    {
+      "mail_uid": "7903",
+      "internal_date": "24-Mar-2026 08:08:58 +0000",
+      "subject": "Frederick Epstein - 新的相关研究工作",
+      "num_candidates_extracted": 9
+    },
+    {
+      "mail_uid": "7904",
+      "internal_date": "24-Mar-2026 08:08:58 +0000",
+      "subject": "Ye Qiao的文章新增了 3 次引用",
+      "num_candidates_extracted": 3
+    },
+    {
+      "mail_uid": "7905",
+      "internal_date": "24-Mar-2026 08:08:58 +0000",
+      "subject": "Qi Yang的文章新增了 6 次引用",
+      "num_candidates_extracted": 6
+    },
+    {
+      "mail_uid": "7915",
+      "internal_date": "25-Mar-2026 22:43:33 +0000",
+      "subject": "Qi Yang - 新的相关研究工作",
+      "num_candidates_extracted": 1
+    },
+    {
+      "mail_uid": "7916",
+      "internal_date": "25-Mar-2026 22:43:33 +0000",
+      "subject": "Ye Qiao的文章新增了 1 次引用",
+      "num_candidates_extracted": 1
+    },
+    {
+      "mail_uid": "7917",
+      "internal_date": "25-Mar-2026 22:43:33 +0000",
+      "subject": "Frederick Epstein - 新的相关研究工作",
+      "num_candidates_extracted": 2
+    },
+    {
+      "mail_uid": "7918",
+      "internal_date": "25-Mar-2026 22:43:33 +0000",
+      "subject": "Qi Yang的文章新增了 5 次引用",
+      "num_candidates_extracted": 5
+    },
+    {
+      "mail_uid": "7920",
+      "internal_date": "27-Mar-2026 09:22:50 +0000",
+      "subject": "Qi Yang - 新的相关研究工作",
+      "num_candidates_extracted": 2
+    },
+    {
+      "mail_uid": "7921",
+      "internal_date": "27-Mar-2026 09:22:50 +0000",
+      "subject": "Ye Qiao - 新的相关研究工作",
+      "num_candidates_extracted": 3
+    },
+    {
+      "mail_uid": "7922",
+      "internal_date": "27-Mar-2026 09:22:50 +0000",
+      "subject": "Ye Qiao的文章新增了 2 次引用",
+      "num_candidates_extracted": 2
+    },
+    {
+      "mail_uid": "7923",
+      "internal_date": "27-Mar-2026 09:22:50 +0000",
+      "subject": "Qi Yang的文章新增了 7 次引用",
+      "num_candidates_extracted": 7
+    },
+    {
+      "mail_uid": "7924",
+      "internal_date": "27-Mar-2026 09:22:50 +0000",
+      "subject": "Frederick Epstein - 新的相关研究工作",
+      "num_candidates_extracted": 9
+    },
+    {
+      "mail_uid": "7933",
+      "internal_date": "29-Mar-2026 01:22:29 +0000",
+      "subject": "Qi Yang - 新的相关研究工作",
+      "num_candidates_extracted": 1
+    },
+    {
+      "mail_uid": "7934",
+      "internal_date": "29-Mar-2026 01:22:29 +0000",
+      "subject": "Ye Qiao的文章新增了 1 次引用",
+      "num_candidates_extracted": 1
+    },
+    {
+      "mail_uid": "7935",
+      "internal_date": "29-Mar-2026 01:22:29 +0000",
+      "subject": "Frederick Epstein - 新的相关研究工作",
+      "num_candidates_extracted": 3
+    },
+    {
+      "mail_uid": "7936",
+      "internal_date": "29-Mar-2026 01:22:29 +0000",
+      "subject": "Qi Yang的文章新增了 1 次引用",
+      "num_candidates_extracted": 1
+    },
+    {
+      "mail_uid": "7937",
+      "internal_date": "29-Mar-2026 01:22:29 +0000",
+      "subject": "Ye Qiao - 新的相关研究工作",
+      "num_candidates_extracted": 4
+    },
+    {
+      "mail_uid": "7944",
+      "internal_date": "30-Mar-2026 13:20:53 +0000",
+      "subject": "Ye Qiao - 新的相关研究工作",
+      "num_candidates_extracted": 4
+    },
+    {
+      "mail_uid": "7945",
+      "internal_date": "30-Mar-2026 13:20:53 +0000",
+      "subject": "Ye Qiao的文章新增了 3 次引用",
+      "num_candidates_extracted": 3
+    },
+    {
+      "mail_uid": "7946",
+      "internal_date": "30-Mar-2026 13:20:53 +0000",
+      "subject": "Qi Yang的文章新增了 4 次引用",
+      "num_candidates_extracted": 4
+    },
+    {
+      "mail_uid": "7947",
+      "internal_date": "30-Mar-2026 13:20:53 +0000",
+      "subject": "Qi Yang - 新的相关研究工作",
+      "num_candidates_extracted": 5
+    },
+    {
+      "mail_uid": "7948",
+      "internal_date": "30-Mar-2026 13:20:53 +0000",
+      "subject": "Frederick Epstein - 新的相关研究工作",
+      "num_candidates_extracted": 10
+    },
+    {
+      "mail_uid": "7952",
+      "internal_date": "31-Mar-2026 21:56:13 +0000",
+      "subject": "Qi Yang - 新的相关研究工作",
+      "num_candidates_extracted": 4
+    },
+    {
+      "mail_uid": "7953",
+      "internal_date": "31-Mar-2026 21:56:13 +0000",
+      "subject": "Qi Yang的文章新增了 2 次引用",
+      "num_candidates_extracted": 2
+    },
+    {
+      "mail_uid": "7954",
+      "internal_date": "31-Mar-2026 21:56:13 +0000",
+      "subject": "Ye Qiao - 新的相关研究工作",
+      "num_candidates_extracted": 7
+    },
+    {
+      "mail_uid": "7955",
+      "internal_date": "31-Mar-2026 21:56:13 +0000",
+      "subject": "Frederick Epstein - 新的相关研究工作",
+      "num_candidates_extracted": 10
+    },
+    {
+      "mail_uid": "7956",
+      "internal_date": "31-Mar-2026 21:56:13 +0000",
+      "subject": "Ye Qiao的文章新增了 3 次引用",
+      "num_candidates_extracted": 3
+    },
+    {
+      "mail_uid": "7961",
+      "internal_date": "02-Apr-2026 06:41:39 +0000",
+      "subject": "Ye Qiao的文章新增了 1 次引用",
+      "num_candidates_extracted": 1
+    },
+    {
+      "mail_uid": "7962",
+      "internal_date": "02-Apr-2026 06:41:39 +0000",
+      "subject": "Frederick Epstein - 新的相关研究工作",
+      "num_candidates_extracted": 7
+    },
+    {
+      "mail_uid": "7963",
+      "internal_date": "02-Apr-2026 06:41:39 +0000",
+      "subject": "Ye Qiao - 新的相关研究工作",
+      "num_candidates_extracted": 3
+    }
+  ]
+}

@@ -1,67 +1,63 @@
 # Documentation map
 
-This repo's docs are organized into two layers:
+This repo's docs are now split into a small **active layer** and a larger **archive layer**.
 
 ## 1. Active layer
 
-Read these first when you want the current project state, current decision, and current implementation direction.
+Read these first when you want the current project state, current default flow, and current decision basis.
 
-Project-wide entry order:
+### Project-wide entry order
 
-1. `docs/35-project-phase-map-and-current-status-2026-04-16.md`
-2. `docs/38-next-step-execution-memo-2026-04-21.md`
-3. `docs/validation/trackA-author-blob-fb-decision-20260421c.md`
-4. `docs/validation/trackB-unpaywall-decision-memo-20260422.md`
-5. `docs/validation/unpaywall-position-batch50-summary-20260422_batch50-corrected.md`
-6. `docs/38-trackB-unpaywall-integration-status-2026-04-21.md`
-7. `docs/validation/trackB-unpaywall-decision-memo-20260421b.md`
-8. `docs/37-trackA-narrow-antigarbage-decision-memo-2026-04-21.md`
-9. `docs/33-packageB-decision-memo-2026-04-16.md`
-10. `docs/34-packageB-phase-summary-and-archive-guide-2026-04-16.md`
-11. `docs/21-packageA-implementation-and-replay-results-2026-04-15.md`
-12. `docs/32-packageB-large-slice150-v2-v4-decision-analysis-2026-04-16.md`
-13. `docs/validation/trackA-large-slice150-summary-20260421.md`
-14. `docs/validation/packageB-large-slice150-summary-20260416_slice150.md`
+1. `docs/13-project-phase-map-and-current-status-2026-04-22.md`
+2. `docs/14-mainline-promotion-memo-2026-04-22.md`
+3. `docs/11-packageB-decision-memo-2026-04-16.md`
+4. `docs/12-packageB-phase-summary-and-archive-guide-2026-04-16.md`
+5. `docs/09-packageA-implementation-and-replay-results-2026-04-15.md`
+6. `docs/validation/trackA-author-blob-fb-decision-20260421c.md`
+7. `docs/validation/trackB-unpaywall-decision-memo-20260422.md`
+8. `docs/validation/mainline-summary-20260422_mainline.md`
+9. `docs/validation/unpaywall-position-batch50-summary-20260422_batch50-corrected.md`
+10. `docs/validation/packageB-large-slice150-summary-20260416_slice150.md`
 
-Current active decision layer:
+### Current active decision layer
 
-- `docs/38-next-step-execution-memo-2026-04-21.md`
-- `docs/37-trackA-narrow-antigarbage-decision-memo-2026-04-21.md`
-- `docs/33-packageB-decision-memo-2026-04-16.md`
-- `docs/34-packageB-phase-summary-and-archive-guide-2026-04-16.md`
-- `docs/32-packageB-large-slice150-v2-v4-decision-analysis-2026-04-16.md`
+- `docs/13-project-phase-map-and-current-status-2026-04-22.md`
+- `docs/14-mainline-promotion-memo-2026-04-22.md`
+- `docs/11-packageB-decision-memo-2026-04-16.md`
+- `docs/12-packageB-phase-summary-and-archive-guide-2026-04-16.md`
+- `docs/validation/trackA-author-blob-fb-decision-20260421c.md`
+- `docs/validation/trackB-unpaywall-decision-memo-20260422.md`
+- `docs/validation/mainline-summary-20260422_mainline.md`
 
 ## 2. Archive layer
 
-Use archive docs only when you need provenance, debugging history, or the exact intermediate reasoning path.
+Use archive docs only when you need provenance, debugging history, exact intermediate reasoning, or raw replay artifacts.
 
 - phase archive: `docs/archive/`
 - validation archive: `docs/validation/archive/`
+
+### New archive groups created in this cleanup
+
+- `docs/archive/legacy-plans-and-notes-20260409-22/`
+- `docs/archive/mainline-transition-20260416-22/`
+- `docs/validation/archive/trackA-20260421/`
+- `docs/validation/archive/trackB-20260421-22/`
+- `docs/validation/archive/mainline-20260422/`
 
 ## Documentation maintenance rule
 
 Keep active docs small and decision-oriented.
 
 Active docs should answer:
-
-- what is the current decision
+- what is the current default
 - what is the current implementation state
 - what evidence is canonical
-- what should a new agent or human read first
+- what a new agent or human should read first
 
 Archive docs that are mainly:
-
-- handoff notes
 - temporary plans
-- superseded failure reports
+- handoff notes
+- superseded branch memos
 - smoke-run summaries
-- intermediate checkpoints
-- exploratory branches whose conclusion is already captured elsewhere
-
-## Package B cleanup status
-
-Package B transitional docs from 2026-04-15 to 2026-04-16 have been consolidated.
-
-- active summary docs remain in `docs/`
-- transitional notes moved to `docs/archive/packageB-20260415-16/`
-- transient validation artifacts moved to `docs/validation/archive/packageB-20260415-16/`
+- raw control/treatment replay dumps
+- intermediate checkpoints already captured elsewhere

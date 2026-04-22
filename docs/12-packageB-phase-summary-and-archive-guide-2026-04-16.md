@@ -147,12 +147,12 @@ These are archived, not deleted, because they still preserve debugging context.
 
 ### Read first
 
-- `docs/33-packageB-decision-memo-2026-04-16.md`
-- `docs/34-packageB-phase-summary-and-archive-guide-2026-04-16.md`
+- `docs/11-packageB-decision-memo-2026-04-16.md`
+- `docs/12-packageB-phase-summary-and-archive-guide-2026-04-16.md`
 
 ### Read when decision detail is needed
 
-- `docs/32-packageB-large-slice150-v2-v4-decision-analysis-2026-04-16.md`
+- `docs/10-packageB-large-slice150-v2-v4-decision-analysis-2026-04-16.md`
 
 ### Canonical validation evidence
 

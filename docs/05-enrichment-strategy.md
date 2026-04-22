@@ -81,8 +81,8 @@ When evaluating enrichment changes:
 4. document orchestration limitations separately from policy-quality conclusions
 
 ### Current recommended companion docs
-- `docs/21-packageA-implementation-and-replay-results-2026-04-15.md`
-- `docs/34-packageB-phase-summary-and-archive-guide-2026-04-16.md`
+- `docs/09-packageA-implementation-and-replay-results-2026-04-15.md`
+- `docs/12-packageB-phase-summary-and-archive-guide-2026-04-16.md`
 - `docs/validation/packageB-large-slice150-summary-20260416_slice150.md`
 
 ## OA enrichment placement update (2026-04-22)

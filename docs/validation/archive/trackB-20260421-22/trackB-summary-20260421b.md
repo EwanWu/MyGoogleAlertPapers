@@ -1,0 +1,33 @@
+# Track B Unpaywall replay summary
+
+## Run tag
+20260421b
+
+## Profiles
+- control: `{'status': 'ok', 'failed_stage': None, 'error_message': None, 'source_db': '/home/ewan/NewCareer/Openclaw/proj/MyGoogleAlertPapers/data/mgap_pkgB_large_slice150_seed_20260416_slice150.db', 'output_db': '/home/ewan/NewCareer/Openclaw/proj/MyGoogleAlertPapers/data/mgap_trackB_control_20260421b.db', 'policy_profile': '/home/ewan/NewCareer/Openclaw/proj/MyGoogleAlertPapers/config/policy_profiles/conditional_sources_v2.yaml', 'policy_profile_name': 'conditional_sources_v2', 'stages': ['merge', 'dedup'], 'source_candidate_count': 368, 'replay_candidate_count': 368, 'normalized_candidate_count': 368, 'dirty_doi_source_count': 0, 'dirty_doi_output_count': 0, 'dirty_doi_repaired_count': 0, 'provider_intent_count': 1405, 'source_record_count': 1405, 'matched_source_record_count': 781, 'merged_metadata_proposal_count': 368, 'normalized_only_fallback_proposal_count': 35, 'canonical_paper_count': 292, 'merge_review_queue_count': 4, 'cost_event_count': 736, 'batch_run_count': 2, 'severe_doi_conflict_count': 4, 'total_batch_duration_ms': 370, 'total_provider_latency_ms': 0, 'provider_summary': [{'provider': 'none', 'events': 736, 'total_latency_ms': 0, 'estimated_cost_usd': 0.0}], 'paid_llm_usage': {'present': False, 'note': 'No paid LLM call path was exercised in this replay run.'}}`
+- treatment: `{'status': 'ok', 'failed_stage': None, 'error_message': None, 'source_db': '/home/ewan/NewCareer/Openclaw/proj/MyGoogleAlertPapers/data/mgap_pkgB_large_slice150_seed_20260416_slice150.db', 'output_db': '/home/ewan/NewCareer/Openclaw/proj/MyGoogleAlertPapers/data/mgap_trackB_treat_20260421b.db', 'policy_profile': '/home/ewan/NewCareer/Openclaw/proj/MyGoogleAlertPapers/config/policy_profiles/conditional_sources_v2_unpaywall.yaml', 'policy_profile_name': 'conditional_sources_v2_unpaywall', 'stages': ['enrich', 'merge', 'dedup'], 'source_candidate_count': 368, 'replay_candidate_count': 368, 'normalized_candidate_count': 368, 'dirty_doi_source_count': 0, 'dirty_doi_output_count': 0, 'dirty_doi_repaired_count': 0, 'provider_intent_count': 1566, 'source_record_count': 1566, 'matched_source_record_count': 724, 'merged_metadata_proposal_count': 368, 'normalized_only_fallback_proposal_count': 45, 'canonical_paper_count': 290, 'merge_review_queue_count': 7, 'cost_event_count': 2366, 'batch_run_count': 3, 'severe_doi_conflict_count': 7, 'total_batch_duration_ms': 2538035, 'total_provider_latency_ms': 2522665, 'provider_summary': [{'provider': 'arxiv', 'events': 9, 'total_latency_ms': 46435, 'estimated_cost_usd': 0.0}, {'provider': 'crossref', 'events': 368, 'total_latency_ms': 798285, 'estimated_cost_usd': 0.0}, {'provider': 'europepmc', 'events': 146, 'total_latency_ms': 285002, 'estimated_cost_usd': 0.0}, {'provider': 'none', 'events': 736, 'total_latency_ms': 0, 'estimated_cost_usd': 0.0}, {'provider': 'openalex', 'events': 432, 'total_latency_ms': 307220, 'estimated_cost_usd': 0.0}, {'provider': 'pubmed', 'events': 146, 'total_latency_ms': 399057, 'estimated_cost_usd': 0.0}, {'provider': 'semanticscholar', 'events': 368, 'total_latency_ms': 455033, 'estimated_cost_usd': 0.0}, {'provider': 'unpaywall', 'events': 161, 'total_latency_ms': 231633, 'estimated_cost_usd': 0.0}], 'paid_llm_usage': {'present': False, 'note': 'No paid LLM call path was exercised in this replay run.'}}`
+
+## Key metrics
+
+| Metric | control (v2) | unpaywall | delta |
+|---|---|---|---|
+| matched_source_record_count | 781 | 724 | -57 |
+| merged_metadata_proposal_count | 368 | 368 | 0 |
+| canonical_paper_count | 292 | 290 | -2 |
+| merge_review_queue_count | 4 | 7 | 3 |
+| severe_doi_conflict_count | 4 | 7 | N/A |
+
+## OA URL coverage
+
+To measure OA URL coverage from the treatment run:
+
+```sql
+SELECT COUNT(*) FROM source_record
+WHERE source_name='unpaywall' AND url IS NOT NULL;
+```
+
+## Interpretation
+
+- canonical_paper_count: primary correctness metric — should be flat or improved
+- matched_source_record_count: Unpaywall adds records only for DOI-matched candidates
+- merge_review_queue_count: should not increase if Unpaywall is not creating conflicts

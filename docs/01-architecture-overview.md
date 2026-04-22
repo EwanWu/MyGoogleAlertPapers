@@ -75,6 +75,6 @@ The high-level architecture above remains valid, but the project has now moved f
 ### Where to read current architecture-in-use
 For current system behavior, pair this overview with:
 
-1. `docs/35-project-phase-map-and-current-status-2026-04-16.md`
-2. `docs/21-packageA-implementation-and-replay-results-2026-04-15.md`
-3. `docs/34-packageB-phase-summary-and-archive-guide-2026-04-16.md`
+1. `docs/13-project-phase-map-and-current-status-2026-04-22.md`
+2. `docs/09-packageA-implementation-and-replay-results-2026-04-15.md`
+3. `docs/12-packageB-phase-summary-and-archive-guide-2026-04-16.md`

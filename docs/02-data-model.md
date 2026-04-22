@@ -210,6 +210,6 @@ The entity layout above still captures the intended structure, but several parts
 ### Current reading rule
 For current project-state interpretation, pair this draft with:
 
-1. `docs/35-project-phase-map-and-current-status-2026-04-16.md`
-2. `docs/21-packageA-implementation-and-replay-results-2026-04-15.md`
-3. `docs/34-packageB-phase-summary-and-archive-guide-2026-04-16.md`
+1. `docs/13-project-phase-map-and-current-status-2026-04-22.md`
+2. `docs/09-packageA-implementation-and-replay-results-2026-04-15.md`
+3. `docs/12-packageB-phase-summary-and-archive-guide-2026-04-16.md`

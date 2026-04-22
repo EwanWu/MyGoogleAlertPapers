@@ -61,9 +61,9 @@ Package B 的 broader/default policy recommendation **回退到 `conditional_sou
 
 如果后续 agent 或人类只读最少文档，优先读这几份：
 
-1. `docs/33-packageB-decision-memo-2026-04-16.md`（本 memo）
-2. `docs/34-packageB-phase-summary-and-archive-guide-2026-04-16.md`
-3. `docs/32-packageB-large-slice150-v2-v4-decision-analysis-2026-04-16.md`
+1. `docs/11-packageB-decision-memo-2026-04-16.md`（本 memo）
+2. `docs/12-packageB-phase-summary-and-archive-guide-2026-04-16.md`
+3. `docs/10-packageB-large-slice150-v2-v4-decision-analysis-2026-04-16.md`
 4. `docs/validation/packageB-large-slice150-summary-20260416_slice150.md`
 
 ## Accounting note

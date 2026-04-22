@@ -67,6 +67,6 @@ The philosophy above remains correct, but the project has now exercised conserva
 ### Current recommended reading pair
 Use this document together with:
 
-1. `docs/21-packageA-implementation-and-replay-results-2026-04-15.md`
-2. `docs/33-packageB-decision-memo-2026-04-16.md`
-3. `docs/32-packageB-large-slice150-v2-v4-decision-analysis-2026-04-16.md`
+1. `docs/09-packageA-implementation-and-replay-results-2026-04-15.md`
+2. `docs/11-packageB-decision-memo-2026-04-16.md`
+3. `docs/10-packageB-large-slice150-v2-v4-decision-analysis-2026-04-16.md`

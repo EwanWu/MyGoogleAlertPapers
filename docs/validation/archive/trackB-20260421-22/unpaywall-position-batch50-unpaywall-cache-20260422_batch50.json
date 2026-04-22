@@ -1,0 +1,908 @@
+{
+  "10.1002/jmri.70304": {
+    "matched": true,
+    "url_present": false,
+    "latency_ms": 1080,
+    "source": "existing_cache"
+  },
+  "10.1002/mrm.70349": {
+    "matched": true,
+    "url_present": false,
+    "latency_ms": 1359,
+    "source": "existing_cache"
+  },
+  "10.1002/mrm.70353": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 905,
+    "source": "existing_cache"
+  },
+  "10.1002/nbm.70267": {
+    "matched": true,
+    "url_present": false,
+    "latency_ms": 945,
+    "source": "existing_cache"
+  },
+  "10.1002/nbm.70271": {
+    "matched": true,
+    "url_present": false,
+    "latency_ms": 940,
+    "source": "existing_cache"
+  },
+  "10.1007/s00234-026-03918-9": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 2111,
+    "source": "existing_cache"
+  },
+  "10.1007/s00330-026-12402-0": {
+    "matched": true,
+    "url_present": false,
+    "latency_ms": 907,
+    "source": "existing_cache"
+  },
+  "10.1007/s00330-026-12429-3": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 1496,
+    "source": "existing_cache"
+  },
+  "10.1007/s00330-026-12469-9": {
+    "matched": true,
+    "url_present": false,
+    "latency_ms": 1588,
+    "source": "existing_cache"
+  },
+  "10.1007/s00371-026-04435-9": {
+    "matched": true,
+    "url_present": false,
+    "latency_ms": 1358,
+    "source": "existing_cache"
+  },
+  "10.1007/s00392-026-02878-7": {
+    "matched": true,
+    "url_present": false,
+    "latency_ms": 1102,
+    "source": "existing_cache"
+  },
+  "10.1007/s00395-026-01171-y": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 819,
+    "source": "existing_cache"
+  },
+  "10.1007/s10072-026-08903-x": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 1454,
+    "source": "existing_cache"
+  },
+  "10.1007/s10554-026-03689-7": {
+    "matched": true,
+    "url_present": false,
+    "latency_ms": 984,
+    "source": "existing_cache"
+  },
+  "10.1007/s10554-026-03692-y": {
+    "matched": true,
+    "url_present": false,
+    "latency_ms": 948,
+    "source": "existing_cache"
+  },
+  "10.1007/s10840-026-02276-z": {
+    "matched": true,
+    "url_present": false,
+    "latency_ms": 907,
+    "source": "existing_cache"
+  },
+  "10.1007/s11571-026-10441-3": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 1582,
+    "source": "existing_cache"
+  },
+  "10.1007/s12975-026-01427-8": {
+    "matched": true,
+    "url_present": false,
+    "latency_ms": 934,
+    "source": "existing_cache"
+  },
+  "10.1007/s12975-026-01428-7": {
+    "matched": true,
+    "url_present": false,
+    "latency_ms": 839,
+    "source": "existing_cache"
+  },
+  "10.1007/s40273-026-01604-5": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 1060,
+    "source": "existing_cache"
+  },
+  "10.1007/s40477-026-01146-8": {
+    "matched": true,
+    "url_present": false,
+    "latency_ms": 1692,
+    "source": "existing_cache"
+  },
+  "10.1007/s41782-026-00345-x": {
+    "matched": true,
+    "url_present": false,
+    "latency_ms": 1616,
+    "source": "existing_cache"
+  },
+  "10.1007/s44254-026-00164-3": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 2091,
+    "source": "existing_cache"
+  },
+  "10.1016/j.jacadv.2026.102618": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 1075,
+    "source": "existing_cache"
+  },
+  "10.1016/j.jacc.2026.02.1407": {
+    "matched": true,
+    "url_present": false,
+    "latency_ms": 1247,
+    "source": "existing_cache"
+  },
+  "10.1016/j.jacc.2026.02.1520": {
+    "matched": true,
+    "url_present": false,
+    "latency_ms": 1595,
+    "source": "existing_cache"
+  },
+  "10.1016/j.jacc.2026.02.1548": {
+    "matched": true,
+    "url_present": false,
+    "latency_ms": 825,
+    "source": "existing_cache"
+  },
+  "10.1016/j.jacc.2026.02.1562": {
+    "matched": true,
+    "url_present": false,
+    "latency_ms": 874,
+    "source": "existing_cache"
+  },
+  "10.1016/j.jacc.2026.02.1588": {
+    "matched": true,
+    "url_present": false,
+    "latency_ms": 831,
+    "source": "existing_cache"
+  },
+  "10.1016/j.jacc.2026.02.1592": {
+    "matched": true,
+    "url_present": false,
+    "latency_ms": 877,
+    "source": "existing_cache"
+  },
+  "10.1016/j.jacc.2026.02.1615": {
+    "matched": true,
+    "url_present": false,
+    "latency_ms": 856,
+    "source": "existing_cache"
+  },
+  "10.1016/j.jacc.2026.02.1625": {
+    "matched": true,
+    "url_present": false,
+    "latency_ms": 827,
+    "source": "existing_cache"
+  },
+  "10.1016/j.jacc.2026.02.2025": {
+    "matched": true,
+    "url_present": false,
+    "latency_ms": 919,
+    "source": "existing_cache"
+  },
+  "10.1016/j.jacc.2026.02.2249": {
+    "matched": true,
+    "url_present": false,
+    "latency_ms": 843,
+    "source": "existing_cache"
+  },
+  "10.1016/j.jacc.2026.02.2274": {
+    "matched": true,
+    "url_present": false,
+    "latency_ms": 989,
+    "source": "existing_cache"
+  },
+  "10.1016/j.jacc.2026.02.3481": {
+    "matched": true,
+    "url_present": false,
+    "latency_ms": 896,
+    "source": "existing_cache"
+  },
+  "10.1016/j.jacc.2026.02.403": {
+    "matched": true,
+    "url_present": false,
+    "latency_ms": 1343,
+    "source": "existing_cache"
+  },
+  "10.1016/j.jaccas.2026.107352": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 1343,
+    "source": "existing_cache"
+  },
+  "10.1021/acschemneuro.6c00178": {
+    "matched": true,
+    "url_present": false,
+    "latency_ms": 932,
+    "source": "existing_cache"
+  },
+  "10.1093/ehjci/jeag075/8526574": {
+    "matched": false,
+    "url_present": false,
+    "latency_ms": 878,
+    "source": "existing_cache"
+  },
+  "10.1093/ehjci/jeag081/8552551": {
+    "matched": false,
+    "url_present": false,
+    "latency_ms": 1465,
+    "source": "existing_cache"
+  },
+  "10.1093/ehjimp/qyag045": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 956,
+    "source": "existing_cache"
+  },
+  "10.1093/eschf/xvag091": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 936,
+    "source": "existing_cache"
+  },
+  "10.1093/eurheartj/ehaf1074/8494560": {
+    "matched": false,
+    "url_present": false,
+    "latency_ms": 1456,
+    "source": "existing_cache"
+  },
+  "10.1093/intimm/dxag011/8550814": {
+    "matched": false,
+    "url_present": false,
+    "latency_ms": 861,
+    "source": "existing_cache"
+  },
+  "10.1111/echo.70431": {
+    "matched": true,
+    "url_present": false,
+    "latency_ms": 879,
+    "source": "existing_cache"
+  },
+  "10.1126/scitranslmed.ady6269": {
+    "matched": true,
+    "url_present": false,
+    "latency_ms": 960,
+    "source": "existing_cache"
+  },
+  "10.1148/radiol.251586": {
+    "matched": true,
+    "url_present": false,
+    "latency_ms": 1621,
+    "source": "existing_cache"
+  },
+  "10.1148/ryct.250298": {
+    "matched": true,
+    "url_present": false,
+    "latency_ms": 1054,
+    "source": "existing_cache"
+  },
+  "10.1152/ajpheart.00043.2026": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 1141,
+    "source": "existing_cache"
+  },
+  "10.1161/circulationaha.125.074748": {
+    "matched": true,
+    "url_present": false,
+    "latency_ms": 994,
+    "source": "existing_cache"
+  },
+  "10.1161/circulationaha.126.078841": {
+    "matched": true,
+    "url_present": false,
+    "latency_ms": 935,
+    "source": "existing_cache"
+  },
+  "10.1161/jaha.125.043281": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 920,
+    "source": "existing_cache"
+  },
+  "10.1161/strokeaha.125.053165": {
+    "matched": true,
+    "url_present": false,
+    "latency_ms": 996,
+    "source": "existing_cache"
+  },
+  "10.1161/strokeaha.125.054781": {
+    "matched": true,
+    "url_present": false,
+    "latency_ms": 939,
+    "source": "existing_cache"
+  },
+  "10.1177/0271678x261429042": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 953,
+    "source": "existing_cache"
+  },
+  "10.1177/13872877261427037": {
+    "matched": true,
+    "url_present": false,
+    "latency_ms": 1075,
+    "source": "existing_cache"
+  },
+  "10.1177/17474930261423387": {
+    "matched": true,
+    "url_present": false,
+    "latency_ms": 1742,
+    "source": "existing_cache"
+  },
+  "10.1177/17474930261440598": {
+    "matched": true,
+    "url_present": false,
+    "latency_ms": 1202,
+    "source": "existing_cache"
+  },
+  "10.1186/s12872-026-05765-1": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 937,
+    "source": "existing_cache"
+  },
+  "10.1186/s12872-026-05772-2": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 828,
+    "source": "existing_cache"
+  },
+  "10.1186/s12880-026-02295-2": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 1517,
+    "source": "existing_cache"
+  },
+  "10.1186/s12931-026-03582-w": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 912,
+    "source": "existing_cache"
+  },
+  "10.1186/s12933-026-03142-y": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 1069,
+    "source": "existing_cache"
+  },
+  "10.1186/s12959-026-00839-8": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 1108,
+    "source": "existing_cache"
+  },
+  "10.1186/s40708-026-00297-y": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 911,
+    "source": "existing_cache"
+  },
+  "10.1186/s41016-026-00429-7": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 926,
+    "source": "existing_cache"
+  },
+  "10.1186/s41747-026-00680-8": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 1036,
+    "source": "existing_cache"
+  },
+  "10.1212/nxg.0000000000200358": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 2382,
+    "source": "existing_cache"
+  },
+  "10.1212/nxg.0000000000200359": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 950,
+    "source": "existing_cache"
+  },
+  "10.1212/wnl.0000000000214801": {
+    "matched": true,
+    "url_present": false,
+    "latency_ms": 1059,
+    "source": "existing_cache"
+  },
+  "10.1371/journal.pone.0345077": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 855,
+    "source": "existing_cache"
+  },
+  "10.2147/eb.s552739": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 976,
+    "source": "existing_cache"
+  },
+  "10.3389/fnagi.2026.1790471": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 963,
+    "source": "existing_cache"
+  },
+  "10.3389/fneur.2026.1821860": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 1051,
+    "source": "existing_cache"
+  },
+  "10.64898/2026.03.19.713028.full": {
+    "matched": false,
+    "url_present": false,
+    "latency_ms": 911,
+    "source": "existing_cache"
+  },
+  "10.1002/jmri.70313": {
+    "matched": true,
+    "url_present": false,
+    "latency_ms": 1073,
+    "source": "fresh_query"
+  },
+  "10.1016/j.ajpc.2026.101572": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 971,
+    "source": "fresh_query"
+  },
+  "10.1016/j.athplu.2026.100561": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 901,
+    "source": "fresh_query"
+  },
+  "10.1016/j.ejrad.2026.112801": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 929,
+    "source": "fresh_query"
+  },
+  "10.1016/j.ejrad.2026.112812": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 897,
+    "source": "fresh_query"
+  },
+  "10.1016/j.ejrad.2026.112813": {
+    "matched": true,
+    "url_present": false,
+    "latency_ms": 953,
+    "source": "fresh_query"
+  },
+  "10.1016/j.ejrad.2026.112816": {
+    "matched": true,
+    "url_present": false,
+    "latency_ms": 894,
+    "source": "fresh_query"
+  },
+  "10.1016/j.ejro.2026.100742": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 907,
+    "source": "fresh_query"
+  },
+  "10.1016/j.hrthm.2026.03.1903": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 924,
+    "source": "fresh_query"
+  },
+  "10.1016/j.hrthm.2026.03.1908": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 896,
+    "source": "fresh_query"
+  },
+  "10.1016/j.hrthm.2026.03.1933": {
+    "matched": true,
+    "url_present": false,
+    "latency_ms": 900,
+    "source": "fresh_query"
+  },
+  "10.1016/j.intimp.2026.116513": {
+    "matched": true,
+    "url_present": false,
+    "latency_ms": 934,
+    "source": "fresh_query"
+  },
+  "10.1016/j.jacep.2026.01.037": {
+    "matched": true,
+    "url_present": false,
+    "latency_ms": 921,
+    "source": "fresh_query"
+  },
+  "10.1016/j.jatmed.2026.03.002": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 927,
+    "source": "fresh_query"
+  },
+  "10.1016/j.jep.2026.121572": {
+    "matched": true,
+    "url_present": false,
+    "latency_ms": 932,
+    "source": "fresh_query"
+  },
+  "10.1016/j.jjcc.2026.02.010": {
+    "matched": true,
+    "url_present": false,
+    "latency_ms": 928,
+    "source": "fresh_query"
+  },
+  "10.1016/j.jmccpl.2025.100790": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 897,
+    "source": "fresh_query"
+  },
+  "10.1016/j.jocmr.2026.102714": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 926,
+    "source": "fresh_query"
+  },
+  "10.1016/j.jocmr.2026.102719": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 912,
+    "source": "fresh_query"
+  },
+  "10.1016/j.jocmr.2026.102720": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 911,
+    "source": "fresh_query"
+  },
+  "10.1016/j.jocn.2026.111996": {
+    "matched": true,
+    "url_present": false,
+    "latency_ms": 948,
+    "source": "fresh_query"
+  },
+  "10.1016/j.lanhl.2026.100823": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 960,
+    "source": "fresh_query"
+  },
+  "10.1016/j.mvr.2026.104947": {
+    "matched": true,
+    "url_present": false,
+    "latency_ms": 977,
+    "source": "fresh_query"
+  },
+  "10.1016/j.neubiorev.2026.106665": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 1413,
+    "source": "fresh_query"
+  },
+  "10.1016/j.neurad.2026.101548": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 1060,
+    "source": "fresh_query"
+  },
+  "10.1016/j.nicl.2026.103987": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 1473,
+    "source": "fresh_query"
+  },
+  "10.1016/j.preme.2026.100065": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 2368,
+    "source": "fresh_query"
+  },
+  "10.1016/j.rec.2026.03.002": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 920,
+    "source": "fresh_query"
+  },
+  "10.1016/j.taml.2026.100674": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 929,
+    "source": "fresh_query"
+  },
+  "10.1016/s1474-4422(25)00480-6": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 1102,
+    "source": "fresh_query"
+  },
+  "10.1016/s1474-4422(26)00009-8": {
+    "matched": true,
+    "url_present": false,
+    "latency_ms": 945,
+    "source": "fresh_query"
+  },
+  "10.1037/neu0001072": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 906,
+    "source": "fresh_query"
+  },
+  "10.1038/s41598-026-42032-x": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 949,
+    "source": "fresh_query"
+  },
+  "10.1038/s43856-026-01413-z": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 940,
+    "source": "fresh_query"
+  },
+  "10.1038/s44161-026-00785-8": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 934,
+    "source": "fresh_query"
+  },
+  "10.1093/ejhf/xuag034.021": {
+    "matched": true,
+    "url_present": false,
+    "latency_ms": 892,
+    "source": "fresh_query"
+  },
+  "10.1093/ejhf/xuag074": {
+    "matched": true,
+    "url_present": false,
+    "latency_ms": 919,
+    "source": "fresh_query"
+  },
+  "10.1093/eurjpc/zwag115.029": {
+    "matched": true,
+    "url_present": false,
+    "latency_ms": 900,
+    "source": "fresh_query"
+  },
+  "10.1093/europace/euag050": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 961,
+    "source": "fresh_query"
+  },
+  "10.1093/gerona/glag042": {
+    "matched": true,
+    "url_present": false,
+    "latency_ms": 952,
+    "source": "fresh_query"
+  },
+  "10.1097/hjh.0000000000004301": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 912,
+    "source": "fresh_query"
+  },
+  "10.1111/ene.70578": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 936,
+    "source": "fresh_query"
+  },
+  "10.1136/bmjopen-2025-114232": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 1044,
+    "source": "fresh_query"
+  },
+  "10.1136/jnis-2025-024550": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 939,
+    "source": "fresh_query"
+  },
+  "10.1136/jnis-2026-024990": {
+    "matched": true,
+    "url_present": false,
+    "latency_ms": 989,
+    "source": "fresh_query"
+  },
+  "10.15496/publikation-117956": {
+    "matched": false,
+    "url_present": false,
+    "latency_ms": 894,
+    "source": "fresh_query"
+  },
+  "10.15537/1658-3175.1064": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 917,
+    "source": "fresh_query"
+  },
+  "10.15829/1728-8800-2026-4671": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 1367,
+    "source": "fresh_query"
+  },
+  "10.2139/ssrn.5959308": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 1048,
+    "source": "fresh_query"
+  },
+  "10.3171/case25951": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 1542,
+    "source": "fresh_query"
+  },
+  "10.3174/ajnr.a9072": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 933,
+    "source": "fresh_query"
+  },
+  "10.3174/ajnr.a9108": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 965,
+    "source": "fresh_query"
+  },
+  "10.3174/ajnr.a9267": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 941,
+    "source": "fresh_query"
+  },
+  "10.3389/fneur.2026.1677672": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 1076,
+    "source": "fresh_query"
+  },
+  "10.3389/fneur.2026.1765621": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 947,
+    "source": "fresh_query"
+  },
+  "10.3390/anesthres3010007": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 908,
+    "source": "fresh_query"
+  },
+  "10.3390/biomedicines14030689": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 884,
+    "source": "fresh_query"
+  },
+  "10.3390/cancers18061005": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 917,
+    "source": "fresh_query"
+  },
+  "10.3390/diagnostics16060904": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 919,
+    "source": "fresh_query"
+  },
+  "10.3390/diagnostics16070997": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 1123,
+    "source": "fresh_query"
+  },
+  "10.3390/jcm15062207": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 950,
+    "source": "fresh_query"
+  },
+  "10.3390/jcm15062212": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 947,
+    "source": "fresh_query"
+  },
+  "10.3390/jcm15062410": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 2340,
+    "source": "fresh_query"
+  },
+  "10.3904/kjim.2025.244": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 884,
+    "source": "fresh_query"
+  },
+  "10.4103/bc.bc_113_25": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 1452,
+    "source": "fresh_query"
+  },
+  "10.4103/bc.bc_79_25": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 964,
+    "source": "fresh_query"
+  },
+  "10.4103/nrr.nrr-d-25-01310": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 927,
+    "source": "fresh_query"
+  },
+  "10.51220/jmr.v21-s2.35": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 935,
+    "source": "fresh_query"
+  },
+  "10.5603/fm.110766": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 919,
+    "source": "fresh_query"
+  },
+  "10.5646/ch.2026.32.e14": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 897,
+    "source": "fresh_query"
+  },
+  "10.64898/2026.03.17.26348387": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 906,
+    "source": "fresh_query"
+  },
+  "10.64898/2026.03.21.713392": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 920,
+    "source": "fresh_query"
+  },
+  "10.64898/2026.03.26.714533": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 921,
+    "source": "fresh_query"
+  },
+  "10.64898/2026.04.10.26350583": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 901,
+    "source": "fresh_query"
+  },
+  "10.7759/cureus.105441": {
+    "matched": true,
+    "url_present": true,
+    "latency_ms": 948,
+    "source": "fresh_query"
+  }
+}
