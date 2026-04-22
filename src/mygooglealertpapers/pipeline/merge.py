@@ -4,6 +4,7 @@ import json
 import logging
 import re
 import time
+import unicodedata
 import uuid
 from difflib import SequenceMatcher
 from urllib.parse import urlparse
@@ -20,6 +21,10 @@ SOURCE_PRIORITY = {
     'openalex': 3,
     'semanticscholar': 2,
     'pubmed': 1,
+    # unpaywall is not a bibliographic authority; it only provides OA status/URL.
+    # Set to 0 so it never overrides Crossref/OpenAlex/SemanticScholar/PubMed
+    # for title, authors, year, venue, or DOI decisions.
+    'unpaywall': 0,
 }
 
 PUBMED_FALLBACK_FIELDS = {'abstract', 'pmid', 'pmcid'}
@@ -36,6 +41,7 @@ VENUE_ABBREVIATIONS = {
 STOPWORD_TOKENS = {'the', 'of', 'and', 'in', 'for', 'journal'}
 AUTHOR_FOOTNOTE_BLOB_RE = re.compile(r'\b(?:[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2}|[A-Z]{1,4}(?:\s+[A-Z][a-z]+){0,2})\s+\d+\b')
 AUTHOR_CREDENTIAL_RE = re.compile(r'\b(?:phd|msc|md|fmed\s*sci|mbbs|bsc|frcp|mph)\b', re.IGNORECASE)
+NON_ENGLISH_SCRIPT_RE = re.compile(r'[\u4e00-\u9fff\u3400-\u4dbf\u3040-\u30ff\uac00-\ud7af\u0400-\u04ff\u0600-\u06ff]')
 
 
 def _clean_text(value: str | None) -> str | None:
@@ -365,6 +371,22 @@ def _merge_confidence(conflict_assessment: dict) -> float:
     return 0.45
 
 
+def _looks_non_english_title(title: str | None) -> bool:
+    text = clean_title(title) or ''
+    if not text:
+        return False
+    if NON_ENGLISH_SCRIPT_RE.search(text):
+        return True
+    letters = [ch for ch in text if ch.isalpha()]
+    if not letters:
+        return False
+    latin_letters = 0
+    for ch in letters:
+        if 'LATIN' in unicodedata.name(ch, ''):
+            latin_letters += 1
+    return latin_letters == 0
+
+
 def _looks_like_author_footnote_blob(title: str | None) -> bool:
     text = clean_title(title) or ''
     if not text:
@@ -492,7 +514,9 @@ def _normalized_fallback_guardrail(
     max_title_similarity = _max_source_title_similarity(norm_title, unmatched_rows)
     review_similarity_threshold = settings.policy_profile.merge_value('fallback_review_similarity_threshold', None)
     sparse_similarity_threshold = settings.policy_profile.merge_value('fallback_review_sparse_metadata_similarity_threshold', None)
+    reject_non_english_title = bool(settings.policy_profile.merge_value('fallback_reject_non_english_title', False))
     reject_author_blob = bool(settings.policy_profile.merge_value('fallback_reject_author_blob', False))
+    reject_author_blob_identifier_aware = bool(settings.policy_profile.merge_value('fallback_reject_author_blob_identifier_aware', False))
     review_author_pollution = bool(settings.policy_profile.merge_value('fallback_review_author_pollution', False))
     has_authors = bool(clean_text(norm_authors_json))
     has_venue = bool(clean_venue(norm_venue_guess))
@@ -502,7 +526,13 @@ def _normalized_fallback_guardrail(
     decision = 'accept'
     author_pollution_salvage = None
 
-    if reject_author_blob and _looks_like_author_footnote_blob(norm_title):
+    if reject_non_english_title and _looks_non_english_title(norm_title):
+        decision = 'reject'
+        reasons.append('title_not_english')
+    elif reject_author_blob_identifier_aware and not has_identifier and _looks_like_author_footnote_blob(norm_title):
+        decision = 'reject'
+        reasons.append('title_looks_like_author_footnote_blob_identifier_aware')
+    elif reject_author_blob and _looks_like_author_footnote_blob(norm_title):
         decision = 'reject'
         reasons.append('title_looks_like_author_footnote_blob')
     elif review_author_pollution and _has_author_tail_pollution(norm_title):
@@ -538,6 +568,7 @@ def _normalized_fallback_guardrail(
         'max_source_title_similarity': round(max_title_similarity, 3),
         'review_similarity_threshold': review_similarity_threshold,
         'sparse_similarity_threshold': sparse_similarity_threshold,
+        'reject_non_english_title': reject_non_english_title,
         'unmatched_source_count': len(unmatched_rows),
         'has_authors': has_authors,
         'has_venue': has_venue,

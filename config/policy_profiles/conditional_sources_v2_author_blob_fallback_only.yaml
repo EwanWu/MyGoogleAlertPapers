@@ -1,0 +1,43 @@
+profile_name: conditional_sources_v2_author_blob_fallback_only
+summary: >
+  conditional_sources_v2 baseline plus only one very narrow rule:
+  block obvious author-blob garbage at the FINAL fallback acceptance step,
+  but ONLY when the fallback proposal has no strong identifier (DOI/PMID/PMCID).
+  This rule must NOT fire when the candidate already has a reliable identifier.
+  Goal: catch the garbage case without perturbing provider matching.
+notes:
+  - Inherit all conditional_sources_v2 routing and fallback behavior unchanged
+  - Only add the author-blob late-fallback garbage filter
+  - The author-blob rule must be gated on has_identifier=false, meaning
+    it only fires when there is no DOI/PMID/PMCID to already distinguish the paper
+  - Do NOT enable non-English rejection in this profile
+  - Do NOT enable author-tail pollution review/salvage
+  - Do NOT enable any broad similarity guardrails
+  - This is the last Track A micro-patch before considering Track B
+provider_rules:
+  crossref:
+    enabled: true
+  openalex:
+    enabled: true
+    doi_batch_enabled: true
+  semanticscholar:
+    enabled: true
+  pubmed:
+    enabled: true
+    fallback_only_for_core_fields: true
+  europepmc:
+    enabled: true
+    trigger_mode: narrowed_biomedical_fallback
+  arxiv:
+    enabled: true
+    trigger_mode: arxiv_native_only
+merge_rules:
+  pubmed_title_doi_suppression: true
+  normalized_only_fallback: true
+  fallback_reject_author_blob_identifier_aware: true
+replay_defaults:
+  stages:
+    - normalize
+    - enrich
+    - merge
+    - dedup

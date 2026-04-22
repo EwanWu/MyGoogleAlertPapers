@@ -30,6 +30,7 @@ def _make_settings(db_path: Path, *, provider_rules: dict[str, dict[str, object]
         crossref_mailto=None,
         openalex_email=None,
         semantic_scholar_api_key=None,
+        unpaywall_email=None,
         policy_profile=profile,
     )
 
@@ -152,6 +153,115 @@ def test_merge_skips_normalized_only_fallback_when_disabled(tmp_path: Path):
     with sqlite3.connect(db_path) as conn:
         count = conn.execute("SELECT COUNT(*) FROM merged_metadata_proposal WHERE candidate_id = ?", ('cand_skip',)).fetchone()[0]
         assert count == 0
+
+
+def test_merge_rejects_non_english_fallback_when_guardrail_enabled(tmp_path: Path):
+    db_path = tmp_path / 'mgap.db'
+    create_schema_at_default_path(db_path)
+    settings = _make_settings(
+        db_path,
+        merge_rules={
+            'normalized_only_fallback': True,
+            'fallback_reject_non_english_title': True,
+        },
+    )
+
+    import sqlite3
+
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO paper_candidate_normalized (
+                candidate_id, norm_title, norm_title_key, norm_authors_json,
+                first_author_family, year_guess, venue_guess, doi_extracted,
+                pmid_extracted, pmcid_extracted, arxiv_id_extracted,
+                url_canonical, scholar_cluster_hint
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                'cand_non_english',
+                '基于深度学习的脑网络分析',
+                '基于深度学习的脑网络分析',
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            ),
+        )
+        conn.execute(
+            """
+            INSERT INTO source_record (
+                candidate_id, source_name, query_type, query_string, matched, title
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            ('cand_non_english', 'crossref', 'title', 'brain network', 0, 'Brain network analysis with deep learning'),
+        )
+        conn.commit()
+
+    build_merged_metadata(settings, limit=10)
+
+    with sqlite3.connect(db_path) as conn:
+        count = conn.execute("SELECT COUNT(*) FROM merged_metadata_proposal WHERE candidate_id = ?", ('cand_non_english',)).fetchone()[0]
+        assert count == 0
+
+
+def test_merge_keeps_english_fallback_with_technical_symbols(tmp_path: Path):
+    db_path = tmp_path / 'mgap.db'
+    create_schema_at_default_path(db_path)
+    settings = _make_settings(
+        db_path,
+        merge_rules={
+            'normalized_only_fallback': True,
+            'fallback_reject_non_english_title': True,
+        },
+    )
+
+    import sqlite3
+
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO paper_candidate_normalized (
+                candidate_id, norm_title, norm_title_key, norm_authors_json,
+                first_author_family, year_guess, venue_guess, doi_extracted,
+                pmid_extracted, pmcid_extracted, arxiv_id_extracted,
+                url_canonical, scholar_cluster_hint
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                'cand_english_symbols',
+                'β-amyloid PET @ scale: "fast" <robust> reconstruction',
+                'amyloid pet scale',
+                None,
+                None,
+                '2026',
+                'NeuroImage',
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            ),
+        )
+        conn.commit()
+
+    build_merged_metadata(settings, limit=10)
+
+    with sqlite3.connect(db_path) as conn:
+        row = conn.execute(
+            "SELECT preferred_title, conflict_flags_json FROM merged_metadata_proposal WHERE candidate_id = ?",
+            ('cand_english_symbols',),
+        ).fetchone()
+        assert row is not None
+        assert row[0] == 'β-amyloid PET @ scale: "fast" robust reconstruction'
+        assert 'title_not_english' not in row[1]
 
 
 def test_merge_rejects_author_blob_fallback_when_guardrail_enabled(tmp_path: Path):

@@ -37,6 +37,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--python", default="python3", help="Python interpreter for mgap CLI calls")
     parser.add_argument("--workspace", default=None, help="Project root, auto-detected when omitted")
+    parser.add_argument("--reuse-source-records-from", type=str, default=None, help="Path to a DB whose source_record/candidate_enrichment_status/query_cache tables will be copied into output-db before running stages. Skips enrich stage automatically. Enables stable merge-only profile comparison without re-running enrich.")
     parser.add_argument("--stage-timeout-seconds", type=int, default=0, help="Wall-clock timeout for each mgap stage; 0 disables timeout")
     return parser.parse_args()
 
@@ -46,6 +47,19 @@ def reset_tables(conn: sqlite3.Connection, tables: Iterable[str]) -> None:
     for table in tables:
         conn.execute(f"DELETE FROM {table}")
     conn.commit()
+
+
+def _copy_source_records(src_conn: sqlite3.Connection, dst_conn: sqlite3.Connection) -> None:
+    """Copy source_record, candidate_enrichment_status, and query_cache from src to dst."""
+    for table in ['source_record', 'candidate_enrichment_status', 'query_cache']:
+        dst_conn.execute(f"DELETE FROM {table}")
+        src_rows = src_conn.execute(f"SELECT * FROM {table}").fetchall()
+        if not src_rows:
+            continue
+        col_count = len(src_rows[0])
+        placeholders = ','.join(['?'] * col_count)
+        dst_conn.executemany(f"INSERT INTO {table} VALUES ({placeholders})", src_rows)
+    dst_conn.commit()
 
 
 def tables_for_stages(stages: list[str]) -> list[str]:
@@ -244,25 +258,39 @@ def main() -> None:
     report_out.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(source_db, output_db)
 
+    # Determine which stages to actually run; --reuse-source-records-from skips enrich
+    stages_to_run = list(args.stages)
+    if args.reuse_source_records_from:
+        reuse_db = Path(args.reuse_source_records_from).resolve()
+        if not reuse_db.exists():
+            raise SystemExit(f"reuse source-records DB not found: {reuse_db}")
+        # Copy source records before running anything; do not re-run enrich
+        stages_to_run = [s for s in stages_to_run if s != "enrich"]
+        with sqlite3.connect(output_db) as conn_out:
+            reset_tables(conn_out, tables_for_stages(['merge', 'dedup']))
+            with sqlite3.connect(reuse_db) as conn_src:
+                _copy_source_records(conn_src, conn_out)
+
     with sqlite3.connect(output_db) as conn:
         source_candidate_count = count_scalar(conn, "SELECT COUNT(*) FROM paper_candidate")
         replay_candidate_count = count_scalar(conn, "SELECT COUNT(*) FROM paper_candidate_normalized")
         dirty_doi_source_count = count_scalar(conn, DIRTY_DOI_SQL)
-        reset_tables(conn, tables_for_stages(args.stages))
+        if not args.reuse_source_records_from:
+            reset_tables(conn, tables_for_stages(args.stages))
 
     failed_stage = None
     error_message = None
     try:
-        if "normalize" in args.stages:
+        if "normalize" in stages_to_run:
             failed_stage = "normalize"
             run_mgap(project_root, args.python, output_db, policy_profile, "normalize-candidates", args.limit, args.stage_timeout_seconds)
-        if "enrich" in args.stages:
+        if "enrich" in stages_to_run:
             failed_stage = "enrich"
             run_mgap(project_root, args.python, output_db, policy_profile, "enrich-candidates", args.limit, args.stage_timeout_seconds)
-        if "merge" in args.stages:
+        if "merge" in stages_to_run:
             failed_stage = "merge"
             run_mgap(project_root, args.python, output_db, policy_profile, "merge-metadata", args.limit, args.stage_timeout_seconds)
-        if "dedup" in args.stages:
+        if "dedup" in stages_to_run:
             failed_stage = "dedup"
             run_mgap(project_root, args.python, output_db, policy_profile, "dedup-candidates", args.limit, args.stage_timeout_seconds)
         failed_stage = None
