@@ -1,0 +1,205 @@
+{
+  "run_tag": "20260422_mainline",
+  "control_profile": "conditional_sources_v2",
+  "treatment_profile": "conditional_sources_v2_author_blob_fallback_only + post_dedup_unpaywall",
+  "baseline_enrich_from_donor_db": {
+    "db": "/home/ewan/NewCareer/Openclaw/proj/MyGoogleAlertPapers/data/mgap_trackA_author_blob_fb_v2_20260421c.db",
+    "provider_latency_ms": 2197341,
+    "provider_summary": [
+      {
+        "provider": "arxiv",
+        "events": 9,
+        "total_latency_ms": 18928
+      },
+      {
+        "provider": "crossref",
+        "events": 368,
+        "total_latency_ms": 781668
+      },
+      {
+        "provider": "europepmc",
+        "events": 146,
+        "total_latency_ms": 274387
+      },
+      {
+        "provider": "openalex",
+        "events": 368,
+        "total_latency_ms": 379960
+      },
+      {
+        "provider": "pubmed",
+        "events": 146,
+        "total_latency_ms": 364224
+      },
+      {
+        "provider": "semanticscholar",
+        "events": 368,
+        "total_latency_ms": 378174
+      }
+    ],
+    "paid_llm_usage": {
+      "present": false,
+      "note": "No paid LLM call path was exercised in the donor enrich run."
+    }
+  },
+  "control_merge_dedup": {
+    "status": "ok",
+    "failed_stage": null,
+    "error_message": null,
+    "source_db": "/home/ewan/NewCareer/Openclaw/proj/MyGoogleAlertPapers/data/mgap_pkgB_large_slice150_seed_20260416_slice150.db",
+    "output_db": "/home/ewan/NewCareer/Openclaw/proj/MyGoogleAlertPapers/data/mgap_mainline_control_20260422_mainline.db",
+    "policy_profile": "/home/ewan/NewCareer/Openclaw/proj/MyGoogleAlertPapers/config/policy_profiles/conditional_sources_v2.yaml",
+    "policy_profile_name": "conditional_sources_v2",
+    "stages": [
+      "merge",
+      "dedup"
+    ],
+    "source_candidate_count": 368,
+    "replay_candidate_count": 368,
+    "normalized_candidate_count": 368,
+    "dirty_doi_source_count": 0,
+    "dirty_doi_output_count": 0,
+    "dirty_doi_repaired_count": 0,
+    "provider_intent_count": 1405,
+    "source_record_count": 1405,
+    "matched_source_record_count": 781,
+    "merged_metadata_proposal_count": 368,
+    "normalized_only_fallback_proposal_count": 35,
+    "canonical_paper_count": 292,
+    "merge_review_queue_count": 4,
+    "cost_event_count": 736,
+    "batch_run_count": 2,
+    "severe_doi_conflict_count": 4,
+    "total_batch_duration_ms": 330,
+    "total_provider_latency_ms": 0,
+    "provider_summary": [
+      {
+        "provider": "none",
+        "events": 736,
+        "total_latency_ms": 0,
+        "estimated_cost_usd": 0.0
+      }
+    ],
+    "paid_llm_usage": {
+      "present": false,
+      "note": "No paid LLM call path was exercised in this replay run."
+    }
+  },
+  "treatment_merge_dedup": {
+    "status": "ok",
+    "failed_stage": null,
+    "error_message": null,
+    "source_db": "/home/ewan/NewCareer/Openclaw/proj/MyGoogleAlertPapers/data/mgap_pkgB_large_slice150_seed_20260416_slice150.db",
+    "output_db": "/home/ewan/NewCareer/Openclaw/proj/MyGoogleAlertPapers/data/mgap_mainline_treat_20260422_mainline.db",
+    "policy_profile": "/home/ewan/NewCareer/Openclaw/proj/MyGoogleAlertPapers/config/policy_profiles/conditional_sources_v2_author_blob_fallback_only.yaml",
+    "policy_profile_name": "conditional_sources_v2_author_blob_fallback_only",
+    "stages": [
+      "merge",
+      "dedup"
+    ],
+    "source_candidate_count": 368,
+    "replay_candidate_count": 368,
+    "normalized_candidate_count": 368,
+    "dirty_doi_source_count": 0,
+    "dirty_doi_output_count": 0,
+    "dirty_doi_repaired_count": 0,
+    "provider_intent_count": 1405,
+    "source_record_count": 1405,
+    "matched_source_record_count": 781,
+    "merged_metadata_proposal_count": 367,
+    "normalized_only_fallback_proposal_count": 34,
+    "canonical_paper_count": 291,
+    "merge_review_queue_count": 4,
+    "cost_event_count": 735,
+    "batch_run_count": 2,
+    "severe_doi_conflict_count": 4,
+    "total_batch_duration_ms": 325,
+    "total_provider_latency_ms": 0,
+    "provider_summary": [
+      {
+        "provider": "none",
+        "events": 735,
+        "total_latency_ms": 0,
+        "estimated_cost_usd": 0.0
+      }
+    ],
+    "paid_llm_usage": {
+      "present": false,
+      "note": "No paid LLM call path was exercised in this replay run."
+    }
+  },
+  "trackA_delta": {
+    "canonical_paper_count": -1,
+    "merge_review_queue_count": 0,
+    "severe_doi_conflict_count": 0,
+    "normalized_only_fallback_proposal_count": -1
+  },
+  "garbage_case_check": {
+    "candidate_id": "cand_400e144162689110",
+    "control_present_in_merged_proposal": true,
+    "treatment_present_in_merged_proposal": false,
+    "blocked_in_treatment": true,
+    "only_control_candidates": [
+      "cand_400e144162689110"
+    ],
+    "only_treat_candidates": [],
+    "collateral_loss_candidates": [],
+    "targeted_removal_only": true
+  },
+  "post_dedup_oa": {
+    "paper_open_access_count": 263,
+    "canonical_doi_count": 263,
+    "is_oa_true_count": 156,
+    "best_oa_url_count": 156,
+    "oa_latency_ms": 322042,
+    "oa_cost_event_count": 263,
+    "oa_cache_hit_count": 0,
+    "oa_status_breakdown": [
+      {
+        "oa_status": "closed",
+        "count": 91
+      },
+      {
+        "oa_status": "gold",
+        "count": 89
+      },
+      {
+        "oa_status": "hybrid",
+        "count": 50
+      },
+      {
+        "oa_status": "unknown",
+        "count": 16
+      },
+      {
+        "oa_status": "green",
+        "count": 15
+      },
+      {
+        "oa_status": "bronze",
+        "count": 2
+      }
+    ],
+    "oa_enrichment_status_breakdown": [
+      {
+        "status": "ok",
+        "count": 247
+      },
+      {
+        "status": "no_match",
+        "count": 15
+      },
+      {
+        "status": "error",
+        "count": 1
+      }
+    ]
+  },
+  "integrated_takeaway": {
+    "trackA_removed_target_garbage_only": true,
+    "review_not_worse": true,
+    "severe_conflict_not_worse": true,
+    "oa_urls_added": 156,
+    "oa_stage_latency_ms": 322042
+  }
+}
