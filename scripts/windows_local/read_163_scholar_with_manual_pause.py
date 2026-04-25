@@ -30,6 +30,7 @@ LOGIN_HINTS = ['账号登录', '扫码登录', '输入密码', '登录网易邮�
 CAPTCHA_HINTS = ['滑动验证', '请完成验证', '安全验证', '拖动滑块', '验证码', 'captcha', 'nc_']
 INBOX_HINTS = ['收件箱', '写 信', '写信', '未读邮件', '邮件全文搜索', '网易邮箱6.0版', '全部设为已读']
 ERROR_HINTS = ['糟糕，出现了错误', '服务器开小差了', '返回首页']
+UNREAD_TITLE_RE = re.compile(r'\((\d+)封未读\)')
 
 
 @dataclass
@@ -119,6 +120,20 @@ async def _page_is_usable(page: Page) -> bool:
         return True
     except Exception:
         return False
+
+
+async def _current_unread_count(page: Page) -> int | None:
+    try:
+        title = await page.title()
+    except Exception:
+        return None
+    m = UNREAD_TITLE_RE.search(title or '')
+    if not m:
+        return None
+    try:
+        return int(m.group(1))
+    except Exception:
+        return None
 
 
 async def attach_page(browser: Browser, *, prefer_existing_mail_tab: bool = True) -> Page:
@@ -1277,6 +1292,8 @@ async def run_body_fetch_sweep(
     max_targets: int | None,
     start_page: int = 1,
     start_from_current_page: bool = False,
+    stop_at_page: int | None = None,
+    stop_when_unread_below: int | None = None,
 ) -> int:
     run_started_at = datetime.now(timezone.utc)
     run_started_perf = time.perf_counter()
@@ -1291,6 +1308,7 @@ async def run_body_fetch_sweep(
     effective_start_page = requested_start_page
     page_probes: list[dict[str, Any]] = []
     return_method_counts: dict[str, int] = {'history_back': 0, 'goto': 0, 'goto_soft_reset': 0}
+    stop_reason: dict[str, Any] | None = None
 
     playwright, browser = await connect_browser(state.cdp_endpoint)
     try:
@@ -1367,6 +1385,8 @@ async def run_body_fetch_sweep(
             'body_fetch_started_from_current_page': bool(start_from_current_page),
             'soft_reset_every_pages': SOFT_RESET_EVERY_PAGES,
             'soft_reset_count': 0,
+            'stop_at_page': int(stop_at_page) if stop_at_page is not None else None,
+            'stop_when_unread_below': int(stop_when_unread_below) if stop_when_unread_below is not None else None,
         }
         save_state(state)
 
@@ -1519,6 +1539,28 @@ async def run_body_fetch_sweep(
 
             if reached_target_limit:
                 break
+            unread_count = await _current_unread_count(page)
+            state.artifacts = (state.artifacts or {}) | {
+                'current_unread_count': unread_count,
+                'last_page_completed': current_page_no,
+            }
+            save_state(state)
+            if stop_when_unread_below is not None and unread_count is not None and unread_count < int(stop_when_unread_below):
+                stop_reason = {
+                    'kind': 'unread_below_threshold',
+                    'threshold': int(stop_when_unread_below),
+                    'current_unread_count': int(unread_count),
+                    'page_no': int(current_page_no),
+                }
+                break
+            if stop_at_page is not None and current_page_no >= int(stop_at_page):
+                stop_reason = {
+                    'kind': 'page_threshold_reached',
+                    'threshold': int(stop_at_page),
+                    'page_no': int(current_page_no),
+                    'current_unread_count': unread_count,
+                }
+                break
             if page_idx >= page_limit - 1:
                 break
             if pages_visited % SOFT_RESET_EVERY_PAGES == 0:
@@ -1552,15 +1594,23 @@ async def run_body_fetch_sweep(
                 break
             await page.wait_for_timeout(900)
 
-        if success_count == 0 and failure_count == 0 and attempted_new == 0:
+        if stop_reason is not None:
+            state.status = 'completed'
+        elif success_count == 0 and failure_count == 0 and attempted_new == 0:
             state.status = 'needs_calibration'
         else:
             state.status = 'completed' if success_count > 0 and failure_count == 0 else 'completed_with_failures'
         state.current_step = 'sequential sweep body fetch finished'
         state.next_step = 'inspect output JSONL, then run import-local-bodies or continue with a larger sweep'
         state.note = f'pages={pages_visited}; success={success_count}; skipped_existing={skipped_existing}; failures={failure_count}'
+        if stop_reason is not None:
+            if stop_reason.get('kind') == 'unread_below_threshold':
+                state.note += f"; stop_reason=unread<{stop_reason.get('threshold')} (current={stop_reason.get('current_unread_count')})"
+            elif stop_reason.get('kind') == 'page_threshold_reached':
+                state.note += f"; stop_reason=page>={stop_reason.get('threshold')} (current={stop_reason.get('page_no')})"
         state.artifacts = (state.artifacts or {}) | {
-            'body_fetch_completion': await capture_diag(page, 'body_fetch_completion')
+            'body_fetch_completion': await capture_diag(page, 'body_fetch_completion'),
+            'stop_reason': stop_reason,
         }
         save_state(state)
         run_elapsed_seconds = round(time.perf_counter() - run_started_perf, 3)
@@ -1714,6 +1764,8 @@ def parse_args() -> argparse.Namespace:
     sweep.add_argument('--max-targets', type=int)
     sweep.add_argument('--start-page', type=int, default=1, help='1-based inbox page to start from when not using --start-from-current-page')
     sweep.add_argument('--start-from-current-page', action='store_true', help='Start from the currently visible inbox page instead of resetting to page 1 or --start-page')
+    sweep.add_argument('--stop-at-page', type=int, help='Stop after finishing a page whose page number is >= this threshold')
+    sweep.add_argument('--stop-when-unread-below', type=int, help='Stop after finishing a page once unread count drops below this threshold')
     return p.parse_args()
 
 
@@ -1752,6 +1804,8 @@ async def main_async(args: argparse.Namespace) -> int:
             max_targets=args.max_targets,
             start_page=args.start_page,
             start_from_current_page=args.start_from_current_page,
+            stop_at_page=args.stop_at_page,
+            stop_when_unread_below=args.stop_when_unread_below,
         )
     raise RuntimeError('unexpected async command')
 

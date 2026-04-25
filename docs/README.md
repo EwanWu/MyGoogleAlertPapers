@@ -14,7 +14,7 @@ Read these first when you want the current project state, current default flow, 
 4. `docs/12-packageB-phase-summary-and-archive-guide-2026-04-16.md`
 5. `docs/09-packageA-implementation-and-replay-results-2026-04-15.md`
 6. `docs/validation/trackA-author-blob-fb-decision-20260421c.md`
-7. `docs/validation/trackB-unpaywall-decision-memo-20260422.md`
+7. `docs/validation/trackB-unpaywall-decision-memo-20260422.md` — ✅ **COMPLETED 2026-04-22**
 8. `docs/validation/mainline-summary-20260422_mainline.md`
 9. `docs/validation/unpaywall-position-batch50-summary-20260422_batch50-corrected.md`
 10. `docs/validation/packageB-large-slice150-summary-20260416_slice150.md`
@@ -28,6 +28,14 @@ Read these first when you want the current project state, current default flow, 
 - `docs/validation/trackA-author-blob-fb-decision-20260421c.md`
 - `docs/validation/trackB-unpaywall-decision-memo-20260422.md`
 - `docs/validation/mainline-summary-20260422_mainline.md`
+
+### Current operations / data-acquisition validation
+
+- `docs/validation/163-local-scholar-index-validation-20260423.md` — validated Windows-local 163 unread Google Scholar index flow, including root-cause analysis of the `135`-row regression and the final `277`-row 3-page result
+- `docs/validation/163-local-body-sweep-and-ingest-validation-20260424.md` — canonical 2026-04-24 validation memo for the 21-page / 1878-mail body sweep, with time-cost analysis, 20-mail mixed smoke test, full 1878-mail early-ingest verification, and the current diagnosis of deep-page UI navigation overhead
+- `runbooks/163-local-mail-modular-pipeline-2026-04-23.md` — defines the new decoupled execution boundary: validate small-batch body ingestion into the existing SQLite pipeline first, then fetch all mail bodies, and only after that run offline enrich / merge / dedup
+- `runbooks/163-local-body-ingest-smoketest-2026-04-23.md` — exact CLI, input schema, and smoke-test sequence for importing locally fetched bodies into SQLite before any enrich stage
+- `scripts/windows_local/run_163_body_fetch_sample.ps1` + `scripts/windows_local/read_163_scholar_with_manual_pause.py run-body-fetch` — first-cut Windows-local body-fetch path that emits import-local-bodies-compatible JSONL for the 10-20 mail validation stage
 
 ## 2. Archive layer
 

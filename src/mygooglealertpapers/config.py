@@ -44,6 +44,7 @@ class Settings:
     crossref_mailto: str | None
     openalex_email: str | None
     semantic_scholar_api_key: str | None
+    unpaywall_email: str | None
     policy_profile: PolicyProfile
 
 
@@ -172,5 +173,6 @@ def load_settings() -> Settings:
         crossref_mailto=os.getenv('CROSSREF_MAILTO'),
         openalex_email=os.getenv('OPENALEX_EMAIL'),
         semantic_scholar_api_key=os.getenv('SEMANTIC_SCHOLAR_API_KEY'),
+        unpaywall_email=os.getenv('UNPAYWALL_EMAIL'),
         policy_profile=policy_profile,
     )
