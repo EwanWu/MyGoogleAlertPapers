@@ -1,0 +1,39 @@
+profile_name: conditional_sources_v2_narrow_antigarbage
+summary: Conditional-source v2 plus narrow fallback anti-garbage rules only.
+notes:
+  - Keep conditional_sources_v2 as the main routing baseline
+  - Restrict anti-garbage handling to normalized-only fallback risk cases
+  - Reject non-English fallback titles
+  - Reject obvious author-footnote blobs
+  - Review author-tail pollution, but salvage when cleaned title strongly matches an identifier-backed source title
+  - Do not enable broad low-similarity fallback guardrails
+provider_rules:
+  crossref:
+    enabled: true
+  openalex:
+    enabled: true
+    doi_batch_enabled: true
+  semanticscholar:
+    enabled: true
+  pubmed:
+    enabled: true
+    fallback_only_for_core_fields: true
+  europepmc:
+    enabled: true
+    trigger_mode: narrowed_biomedical_fallback
+  arxiv:
+    enabled: true
+    trigger_mode: arxiv_native_only
+merge_rules:
+  pubmed_title_doi_suppression: true
+  normalized_only_fallback: true
+  fallback_reject_non_english_title: true
+  fallback_reject_author_blob: true
+  fallback_review_author_pollution: true
+  fallback_author_pollution_salvage_similarity_threshold: 0.8
+replay_defaults:
+  stages:
+    - normalize
+    - enrich
+    - merge
+    - dedup

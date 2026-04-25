@@ -1,0 +1,35 @@
+profile_name: conditional_sources_v2_author_blob_only
+summary: Conditional-source v2 plus only the author-blob fallback reject rule.
+notes:
+  - Keep conditional_sources_v2 as the baseline routing and fallback behavior
+  - Add only the obvious author-footnote/blob rejection rule
+  - Do not enable non-English rejection here; corpus-language policy should be handled separately from this micro-patch experiment
+  - Do not enable author-tail pollution review/salvage in this profile
+  - Do not enable broad similarity guardrails
+provider_rules:
+  crossref:
+    enabled: true
+  openalex:
+    enabled: true
+    doi_batch_enabled: true
+  semanticscholar:
+    enabled: true
+  pubmed:
+    enabled: true
+    fallback_only_for_core_fields: true
+  europepmc:
+    enabled: true
+    trigger_mode: narrowed_biomedical_fallback
+  arxiv:
+    enabled: true
+    trigger_mode: arxiv_native_only
+merge_rules:
+  pubmed_title_doi_suppression: true
+  normalized_only_fallback: true
+  fallback_reject_author_blob: true
+replay_defaults:
+  stages:
+    - normalize
+    - enrich
+    - merge
+    - dedup

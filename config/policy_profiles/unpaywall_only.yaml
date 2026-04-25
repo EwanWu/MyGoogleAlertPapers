@@ -1,0 +1,17 @@
+profile_name: unpaywall_only
+provider_rules:
+  arxiv:
+    enabled: false
+  crossref:
+    enabled: false
+  europepmc:
+    enabled: false
+  openalex:
+    enabled: false
+  pubmed:
+    enabled: false
+  semanticscholar:
+    enabled: false
+  unpaywall:
+    enabled: true
+summary: Unpaywall-only enrichment for isolated OA URL testing
