@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 
+from mygooglealertpapers.normalize.text import comparison_text
+
 
 @dataclass(slots=True)
 class EnrichmentRecord:
@@ -27,17 +29,11 @@ class EnrichmentRecord:
     latency_ms: int
 
 
-import re
 from difflib import SequenceMatcher
 
 
 def normalize_compare_title(title: str | None) -> str:
-    if not title:
-        return ''
-    text = title.casefold()
-    text = re.sub(r'[^\w\s]', ' ', text)
-    text = re.sub(r'\s+', ' ', text).strip()
-    return text
+    return comparison_text(title)
 
 
 def title_similarity(a: str | None, b: str | None) -> float:

@@ -6,11 +6,28 @@ import re
 import unicodedata
 
 
+KNOWN_MARKUP_TAGS = {
+    'a', 'b', 'body', 'br', 'div', 'em', 'html', 'i', 'jats:p', 'jats:sec', 'jats:title',
+    'li', 'ol', 'p', 'scp', 'section', 'span', 'strong', 'sub', 'sup', 'title', 'u', 'ul',
+}
+
+
+def _preserve_literal_angle_bracket_tokens(text: str) -> str:
+    def repl(match: re.Match[str]) -> str:
+        token = match.group(1)
+        if token.casefold() in KNOWN_MARKUP_TAGS:
+            return match.group(0)
+        return f' {token} '
+
+    return re.sub(r'<([A-Za-z][A-Za-z0-9:_-]{0,30})>', repl, text)
+
+
 def clean_text(value: str | None) -> str | None:
     if not value:
         return None
     text = html.unescape(str(value))
-    text = re.sub(r'<[^>]+>', ' ', text)
+    text = _preserve_literal_angle_bracket_tokens(text)
+    text = re.sub(r'</?[^>]+>', ' ', text)
     text = unicodedata.normalize('NFKC', text)
     text = text.replace('–', '-').replace('—', '-').replace('−', '-')
     text = text.replace('“', '"').replace('”', '"').replace('’', "'")

@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import re
-
-from mygooglealertpapers.normalize.text import clean_title
+from mygooglealertpapers.normalize.text import clean_title, comparison_text
 
 
 def normalize_title(title: str | None) -> str | None:
@@ -13,7 +11,5 @@ def make_title_key(title: str | None) -> str | None:
     normalized = normalize_title(title)
     if not normalized:
         return None
-    key = normalized.casefold()
-    key = re.sub(r"[^\w\s]", " ", key)
-    key = re.sub(r"\s+", " ", key).strip()
+    key = comparison_text(normalized)
     return key or None
