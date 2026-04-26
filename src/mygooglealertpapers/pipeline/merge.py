@@ -768,6 +768,20 @@ def build_merged_metadata(settings: Settings, *, limit: int) -> None:
                     version_status, source_priority_trace, conflict_flags_json,
                     merge_confidence
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(candidate_id) DO UPDATE SET
+                    preferred_title=excluded.preferred_title,
+                    preferred_authors_json=excluded.preferred_authors_json,
+                    preferred_abstract=excluded.preferred_abstract,
+                    preferred_venue=excluded.preferred_venue,
+                    preferred_year=excluded.preferred_year,
+                    preferred_doi=excluded.preferred_doi,
+                    preferred_pmid=excluded.preferred_pmid,
+                    preferred_publication_type=excluded.preferred_publication_type,
+                    version_status=excluded.version_status,
+                    source_priority_trace=excluded.source_priority_trace,
+                    conflict_flags_json=excluded.conflict_flags_json,
+                    merge_confidence=excluded.merge_confidence,
+                    created_at=CURRENT_TIMESTAMP
                 """,
                 (
                     candidate_id,

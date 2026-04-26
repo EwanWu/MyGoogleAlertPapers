@@ -9,7 +9,7 @@ from mygooglealertpapers.config import Settings
 from mygooglealertpapers.cost.tracker import CostTracker
 from mygooglealertpapers.db.repository import Repository
 from mygooglealertpapers.db.schema import create_schema
-from mygooglealertpapers.enrich.base import enrichment_record_from_json
+from mygooglealertpapers.enrich.base import cache_metadata_from_record, cache_status_from_record, enrichment_record_from_json, enrichment_record_to_json
 from mygooglealertpapers.enrich.unpaywall import query_unpaywall
 
 logger = logging.getLogger(__name__)
@@ -87,8 +87,7 @@ def enrich_paper_oa(settings: Settings, *, limit: int) -> None:
             rec = None
             if cached is not None:
                 cached_rec = enrichment_record_from_json(cached[0])
-                cached_status, _ = _status_from_record(cached_rec)
-                if cached_status != 'error':
+                if cache_status_from_record(cached_rec) != 'transient_error':
                     rec = cached_rec
                     rec.latency_ms = 0
                     cache_hit = True
@@ -99,43 +98,31 @@ def enrich_paper_oa(settings: Settings, *, limit: int) -> None:
                 rec = query_unpaywall(paper_id, doi=doi, email=settings.unpaywall_email)
                 if rec is None:
                     raise RuntimeError(f'unexpected None from query_unpaywall for DOI {doi}')
-                repo.put_query_cache(conn, provider='unpaywall', query_type='doi', query_key=doi, response_json=json.dumps({
-                    'candidate_id': rec.candidate_id,
-                    'source_name': rec.source_name,
-                    'query_type': rec.query_type,
-                    'query_string': rec.query_string,
-                    'matched': rec.matched,
-                    'match_score': rec.match_score,
-                    'external_id': rec.external_id,
-                    'title': rec.title,
-                    'authors_json': rec.authors_json,
-                    'abstract': rec.abstract,
-                    'venue': rec.venue,
-                    'year': rec.year,
-                    'publication_type': rec.publication_type,
-                    'doi': rec.doi,
-                    'pmid': rec.pmid,
-                    'pmcid': rec.pmcid,
-                    'url': rec.url,
-                    'raw_payload_json': rec.raw_payload_json,
-                    'latency_ms': rec.latency_ms,
-                }, ensure_ascii=False))
+                repo.put_query_cache(
+                    conn,
+                    provider='unpaywall',
+                    query_type='doi',
+                    query_key=doi,
+                    response_json=enrichment_record_to_json(rec),
+                    **cache_metadata_from_record(rec),
+                )
 
             status, error_summary = _status_from_record(rec)
-            snapshot = _extract_snapshot_fields(rec)
-            repo.upsert_paper_open_access(
-                conn,
-                paper_id=paper_id,
-                provider='unpaywall',
-                doi=snapshot['doi'],
-                is_oa=snapshot['is_oa'],
-                oa_status=snapshot['oa_status'],
-                best_oa_url=snapshot['best_oa_url'],
-                best_oa_host_type=snapshot['best_oa_host_type'],
-                best_oa_version=snapshot['best_oa_version'],
-                license=snapshot['license'],
-                raw_payload_json=snapshot['raw_payload_json'],
-            )
+            if status != 'error':
+                snapshot = _extract_snapshot_fields(rec)
+                repo.upsert_paper_open_access(
+                    conn,
+                    paper_id=paper_id,
+                    provider='unpaywall',
+                    doi=snapshot['doi'],
+                    is_oa=snapshot['is_oa'],
+                    oa_status=snapshot['oa_status'],
+                    best_oa_url=snapshot['best_oa_url'],
+                    best_oa_host_type=snapshot['best_oa_host_type'],
+                    best_oa_version=snapshot['best_oa_version'],
+                    license=snapshot['license'],
+                    raw_payload_json=snapshot['raw_payload_json'],
+                )
             repo.finish_paper_oa_status(
                 conn,
                 paper_id=paper_id,

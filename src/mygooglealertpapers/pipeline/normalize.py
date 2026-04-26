@@ -42,7 +42,7 @@ def normalize_candidates(settings: Settings, *, limit: int) -> None:
             combined_text = "\n".join(x for x in [raw_title, raw_link, raw_snippet, target_url] if x)
             conn.execute(
                 """
-                INSERT INTO paper_candidate_normalized (
+                INSERT OR IGNORE INTO paper_candidate_normalized (
                     candidate_id, norm_title, norm_title_key, norm_authors_json,
                     first_author_family, year_guess, venue_guess, doi_extracted,
                     pmid_extracted, pmcid_extracted, arxiv_id_extracted,

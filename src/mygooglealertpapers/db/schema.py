@@ -4,6 +4,13 @@ import sqlite3
 from pathlib import Path
 
 
+def configure_connection(conn: sqlite3.Connection) -> sqlite3.Connection:
+    conn.execute('PRAGMA foreign_keys = ON')
+    conn.execute('PRAGMA journal_mode = WAL')
+    conn.execute('PRAGMA busy_timeout = 5000')
+    return conn
+
+
 SCHEMA_SQL = """
 
 CREATE TABLE IF NOT EXISTS batch_run (
@@ -90,19 +97,22 @@ CREATE TABLE IF NOT EXISTS paper_candidate_normalized (
     normalized_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
-
-
 CREATE TABLE IF NOT EXISTS query_cache (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     provider TEXT NOT NULL,
     query_type TEXT NOT NULL,
     query_key TEXT NOT NULL,
     response_json TEXT,
+    cache_status TEXT NOT NULL DEFAULT 'positive_match',
+    http_status INTEGER,
+    error_type TEXT,
+    expires_at TEXT,
+    field_set_hash TEXT NOT NULL DEFAULT 'default',
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_query_cache_provider_type_key
-ON query_cache(provider, query_type, query_key);
+ON query_cache(provider, query_type, query_key, field_set_hash);
 
 CREATE TABLE IF NOT EXISTS source_record (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -150,7 +160,6 @@ CREATE TABLE IF NOT EXISTS candidate_enrichment_status (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_candidate_enrichment_status_candidate_provider
 ON candidate_enrichment_status(candidate_id, provider);
 
-
 CREATE TABLE IF NOT EXISTS merged_metadata_proposal (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     candidate_id TEXT NOT NULL,
@@ -168,7 +177,6 @@ CREATE TABLE IF NOT EXISTS merged_metadata_proposal (
     merge_confidence REAL,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
-
 
 CREATE TABLE IF NOT EXISTS canonical_paper (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -263,29 +271,78 @@ CREATE TABLE IF NOT EXISTS cost_event (
     notes TEXT,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_mail_ingestion_record_mail_uid
+ON mail_ingestion_record(mail_uid);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_mail_ingestion_record_message_id_nonempty
+ON mail_ingestion_record(message_id)
+WHERE message_id IS NOT NULL AND TRIM(message_id) != '';
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_raw_mail_snapshot_mail_uid
+ON raw_mail_snapshot(mail_uid);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_paper_candidate_normalized_candidate_id
+ON paper_candidate_normalized(candidate_id);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_merged_metadata_proposal_candidate_id
+ON merged_metadata_proposal(candidate_id);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_candidate_paper_link_candidate_paper_relation
+ON candidate_paper_link(candidate_id, paper_id, relation_type);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_canonical_paper_doi_nonempty
+ON canonical_paper(canonical_doi)
+WHERE canonical_doi IS NOT NULL AND TRIM(canonical_doi) != '';
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_canonical_paper_pmid_nonempty
+ON canonical_paper(canonical_pmid)
+WHERE canonical_pmid IS NOT NULL AND TRIM(canonical_pmid) != '';
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_canonical_paper_pmcid_nonempty
+ON canonical_paper(canonical_pmcid)
+WHERE canonical_pmcid IS NOT NULL AND TRIM(canonical_pmcid) != '';
 """
 
 
 ALTERS = [
-    "ALTER TABLE paper_candidate ADD COLUMN scholar_wrapper_url TEXT",
-    "ALTER TABLE paper_candidate ADD COLUMN target_url TEXT",
-    "ALTER TABLE paper_candidate ADD COLUMN resource_type_hint TEXT",
-    "ALTER TABLE paper_candidate ADD COLUMN venue_guess TEXT",
-    "ALTER TABLE paper_candidate ADD COLUMN year_guess TEXT",
+    'ALTER TABLE paper_candidate ADD COLUMN scholar_wrapper_url TEXT',
+    'ALTER TABLE paper_candidate ADD COLUMN target_url TEXT',
+    'ALTER TABLE paper_candidate ADD COLUMN resource_type_hint TEXT',
+    'ALTER TABLE paper_candidate ADD COLUMN venue_guess TEXT',
+    'ALTER TABLE paper_candidate ADD COLUMN year_guess TEXT',
+    "ALTER TABLE query_cache ADD COLUMN cache_status TEXT NOT NULL DEFAULT 'positive_match'",
+    'ALTER TABLE query_cache ADD COLUMN http_status INTEGER',
+    'ALTER TABLE query_cache ADD COLUMN error_type TEXT',
+    'ALTER TABLE query_cache ADD COLUMN expires_at TEXT',
+    "ALTER TABLE query_cache ADD COLUMN field_set_hash TEXT NOT NULL DEFAULT 'default'",
+]
+
+
+POST_ALTERS = [
+    'DROP INDEX IF EXISTS idx_query_cache_provider_type_key',
+    '''
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_query_cache_provider_type_key
+    ON query_cache(provider, query_type, query_key, field_set_hash)
+    ''',
 ]
 
 
 def create_schema(conn: sqlite3.Connection) -> None:
+    configure_connection(conn)
     conn.executescript(SCHEMA_SQL)
     for stmt in ALTERS:
         try:
             conn.execute(stmt)
         except sqlite3.OperationalError:
             pass
+    for stmt in POST_ALTERS:
+        conn.execute(stmt)
     conn.commit()
 
 
 def create_schema_at_default_path(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(path) as conn:
+        configure_connection(conn)
         create_schema(conn)

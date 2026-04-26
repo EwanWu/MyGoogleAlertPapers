@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from mygooglealertpapers.config import Settings
 from mygooglealertpapers.cost.tracker import CostTracker
 from mygooglealertpapers.db.repository import Repository
-from mygooglealertpapers.enrich.base import enrichment_record_from_json, enrichment_record_to_json
+from mygooglealertpapers.enrich.base import cache_metadata_from_record, cache_status_from_record, enrichment_record_from_json, enrichment_record_to_json
 from mygooglealertpapers.enrich.crossref import query_crossref
 from mygooglealertpapers.enrich.openalex import query_openalex, query_openalex_batch_by_doi, _extract_primary_location_fields
 from mygooglealertpapers.enrich.pubmed import query_pubmed
@@ -264,7 +264,7 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
                             latency_ms=0,
                         )
                         source_record_id = _insert_source_record(repo, conn, rec)
-                        repo.put_query_cache(conn, provider='openalex', query_type='doi', query_key=doi_val, response_json=enrichment_record_to_json(rec))
+                        repo.put_query_cache(conn, provider='openalex', query_type='doi', query_key=doi_val, response_json=enrichment_record_to_json(rec), **cache_metadata_from_record(rec))
                         repo.finish_enrichment_status(conn, candidate_id=candidate_id, provider='openalex', status='ok', source_record_id=source_record_id, cache_hit=False, latency_ms=0, notes='doi_batch')
                         tracker.record_stage_cost(conn, stage='enrich_candidates', status='ok', candidate_id=candidate_id, provider='openalex', latency_ms=0, notes='doi_batch')
                         handled_openalex_candidates.add(candidate_id)
@@ -296,7 +296,7 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
                                 latency_ms=0,
                             )
                             source_record_id = _insert_source_record(repo, conn, rec)
-                            repo.put_query_cache(conn, provider='openalex', query_type='doi', query_key=doi_val, response_json=enrichment_record_to_json(rec))
+                            repo.put_query_cache(conn, provider='openalex', query_type='doi', query_key=doi_val, response_json=enrichment_record_to_json(rec), **cache_metadata_from_record(rec))
                             repo.finish_enrichment_status(conn, candidate_id=candidate_id, provider='openalex', status='no_match', source_record_id=source_record_id, latency_ms=0, notes='doi_batch_no_match')
                             tracker.record_stage_cost(conn, stage='enrich_candidates', status='no_match', candidate_id=candidate_id, provider='openalex', latency_ms=0, notes='doi_batch_no_match')
                             handled_openalex_candidates.add(candidate_id)
@@ -318,16 +318,18 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
             repo.start_enrichment_status(conn, candidate_id=intent.candidate_id, provider=intent.provider, query_type=intent.query_type, query_key=intent.query_key)
             cached = repo.get_query_cache(conn, provider=intent.provider, query_type=intent.query_type, query_key=intent.query_key)
             if cached:
-                rec = _record_from_cache(intent, cached[0])
-                source_record_id = _insert_source_record(repo, conn, rec)
-                status = 'ok' if rec.matched else 'no_match'
-                repo.finish_enrichment_status(conn, candidate_id=intent.candidate_id, provider=intent.provider, status=status, source_record_id=source_record_id, cache_hit=True, latency_ms=0)
-                tracker.record_stage_cost(conn, stage='enrich_candidates', status='cache_hit', candidate_id=intent.candidate_id, provider=intent.provider, latency_ms=0)
-                processed_intents += 1
-                if processed_intents % PROGRESS_EVERY == 0:
-                    logger.info('Enrich progress: processed %s / %s runnable intent(s)', processed_intents, len(runnable_intents))
-                    conn.commit()
-                continue
+                cached_rec = enrichment_record_from_json(cached[0])
+                if cache_status_from_record(cached_rec) != 'transient_error':
+                    rec = _record_from_cache(intent, cached[0])
+                    source_record_id = _insert_source_record(repo, conn, rec)
+                    status = 'ok' if rec.matched else 'no_match'
+                    repo.finish_enrichment_status(conn, candidate_id=intent.candidate_id, provider=intent.provider, status=status, source_record_id=source_record_id, cache_hit=True, latency_ms=0)
+                    tracker.record_stage_cost(conn, stage='enrich_candidates', status='cache_hit', candidate_id=intent.candidate_id, provider=intent.provider, latency_ms=0)
+                    processed_intents += 1
+                    if processed_intents % PROGRESS_EVERY == 0:
+                        logger.info('Enrich progress: processed %s / %s runnable intent(s)', processed_intents, len(runnable_intents))
+                        conn.commit()
+                    continue
 
             try:
                 if intent.provider == 'pubmed':
@@ -369,7 +371,7 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
                     raw_payload_json=json.dumps({'status': 'error', 'provider': intent.provider, 'error': str(exc)}, ensure_ascii=False),
                     latency_ms=0,
                 )
-                repo.put_query_cache(conn, provider=intent.provider, query_type=intent.query_type, query_key=intent.query_key, response_json=enrichment_record_to_json(rec))
+                repo.put_query_cache(conn, provider=intent.provider, query_type=intent.query_type, query_key=intent.query_key, response_json=enrichment_record_to_json(rec), **cache_metadata_from_record(rec))
                 repo.finish_enrichment_status(conn, candidate_id=intent.candidate_id, provider=intent.provider, status='error', latency_ms=0, error_summary=str(exc))
                 tracker.record_stage_cost(conn, stage='enrich_candidates', status='error', candidate_id=intent.candidate_id, provider=intent.provider, latency_ms=0, notes=str(exc))
                 processed_intents += 1
@@ -401,7 +403,7 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
                     raw_payload_json=json.dumps({'status': 'no_match', 'provider': intent.provider, 'query_key': intent.query_key}, ensure_ascii=False),
                     latency_ms=0,
                 )
-                repo.put_query_cache(conn, provider=intent.provider, query_type=intent.query_type, query_key=intent.query_key, response_json=enrichment_record_to_json(rec))
+                repo.put_query_cache(conn, provider=intent.provider, query_type=intent.query_type, query_key=intent.query_key, response_json=enrichment_record_to_json(rec), **cache_metadata_from_record(rec))
                 source_record_id = _insert_source_record(repo, conn, rec)
                 repo.finish_enrichment_status(conn, candidate_id=intent.candidate_id, provider=intent.provider, status='no_match', source_record_id=source_record_id, latency_ms=0, notes='no_record_returned')
                 tracker.record_stage_cost(conn, stage='enrich_candidates', status='no_match', candidate_id=intent.candidate_id, provider=intent.provider, latency_ms=0, notes='no_record_returned')
@@ -411,7 +413,7 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
                     conn.commit()
                 continue
 
-            repo.put_query_cache(conn, provider=intent.provider, query_type=intent.query_type, query_key=intent.query_key, response_json=enrichment_record_to_json(rec))
+            repo.put_query_cache(conn, provider=intent.provider, query_type=intent.query_type, query_key=intent.query_key, response_json=enrichment_record_to_json(rec), **cache_metadata_from_record(rec))
             source_record_id = _insert_source_record(repo, conn, rec)
             status = 'ok' if rec.matched else 'no_match'
             repo.finish_enrichment_status(conn, candidate_id=intent.candidate_id, provider=intent.provider, status=status, source_record_id=source_record_id, cache_hit=False, latency_ms=rec.latency_ms)

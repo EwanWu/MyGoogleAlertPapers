@@ -198,6 +198,10 @@ def deduplicate_candidates(settings: Settings, *, limit: int) -> None:
                 INSERT INTO candidate_paper_link (
                     candidate_id, paper_id, relation_type, confidence, evidence_json
                 ) VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(candidate_id, paper_id, relation_type) DO UPDATE SET
+                    confidence=excluded.confidence,
+                    evidence_json=excluded.evidence_json,
+                    created_at=CURRENT_TIMESTAMP
                 """,
                 (
                     candidate_id,

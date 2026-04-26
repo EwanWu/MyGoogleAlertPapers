@@ -187,3 +187,120 @@ def test_enrich_paper_oa_reuses_query_cache(tmp_path: Path, monkeypatch):
             ('paper_cached',),
         ).fetchone()
         assert status_row == ('ok', 1, 0)
+
+
+def test_enrich_paper_oa_retries_after_transient_error_without_overwriting_snapshot(tmp_path: Path, monkeypatch):
+    db_path = tmp_path / 'mgap.db'
+    create_schema_at_default_path(db_path)
+    settings = _make_settings(db_path)
+
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            '''
+            INSERT INTO canonical_paper (
+                paper_id, canonical_title, canonical_title_key, canonical_doi
+            ) VALUES (?, ?, ?, ?)
+            ''',
+            ('paper_retry', 'Retry OA Paper', 'retry oa paper', '10.1000/retry-oa'),
+        )
+        conn.execute(
+            '''
+            INSERT INTO paper_open_access (
+                paper_id, provider, doi, is_oa, oa_status, best_oa_url, raw_payload_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''',
+            ('paper_retry', 'unpaywall', '10.1000/retry-oa', 1, 'gold', 'https://example.org/original.pdf', json.dumps({'seed': True})),
+        )
+        conn.commit()
+
+    calls = {'count': 0}
+
+    def flaky_query(candidate_id: str, *, doi: str | None, email: str | None = None, **kwargs):
+        calls['count'] += 1
+        if calls['count'] == 1:
+            return EnrichmentRecord(
+                candidate_id=candidate_id,
+                source_name='unpaywall',
+                query_type='doi',
+                query_string=doi or '',
+                matched=False,
+                match_score=None,
+                external_id=None,
+                title=None,
+                authors_json=None,
+                abstract=None,
+                venue=None,
+                year=None,
+                publication_type=None,
+                doi=doi,
+                pmid=None,
+                pmcid=None,
+                url=None,
+                raw_payload_json=json.dumps({'error': 'temporary timeout'}),
+                latency_ms=10,
+            )
+        return EnrichmentRecord(
+            candidate_id=candidate_id,
+            source_name='unpaywall',
+            query_type='doi',
+            query_string=doi or '',
+            matched=True,
+            match_score=1.0,
+            external_id=doi,
+            title='Retry OA Paper',
+            authors_json=None,
+            abstract=None,
+            venue=None,
+            year='2026',
+            publication_type='journal-article',
+            doi=doi,
+            pmid=None,
+            pmcid=None,
+            url='https://example.org/retried.pdf',
+            raw_payload_json=json.dumps({
+                'doi': doi,
+                'is_oa': True,
+                'oa_status': 'green',
+                'best_oa_location': {
+                    'url': 'https://example.org/retried.pdf',
+                    'host_type': 'repository',
+                    'version': 'acceptedVersion',
+                    'license': 'cc-by',
+                },
+            }),
+            latency_ms=11,
+        )
+
+    monkeypatch.setattr('mygooglealertpapers.pipeline.paper_oa.query_unpaywall', flaky_query)
+
+    enrich_paper_oa(settings, limit=10)
+    with sqlite3.connect(db_path) as conn:
+        row = conn.execute(
+            'SELECT oa_status, best_oa_url FROM paper_open_access WHERE paper_id = ?',
+            ('paper_retry',),
+        ).fetchone()
+        assert row == ('gold', 'https://example.org/original.pdf')
+        status_row = conn.execute(
+            'SELECT status, cache_hit FROM paper_oa_enrichment_status WHERE paper_id = ?',
+            ('paper_retry',),
+        ).fetchone()
+        assert status_row == ('error', 0)
+        cache_row = conn.execute(
+            'SELECT cache_status FROM query_cache WHERE provider = ? AND query_type = ? AND query_key = ?',
+            ('unpaywall', 'doi', '10.1000/retry-oa'),
+        ).fetchone()
+        assert cache_row == ('transient_error',)
+
+    enrich_paper_oa(settings, limit=10)
+    assert calls['count'] == 2
+    with sqlite3.connect(db_path) as conn:
+        row = conn.execute(
+            'SELECT oa_status, best_oa_url, best_oa_host_type, best_oa_version, license FROM paper_open_access WHERE paper_id = ?',
+            ('paper_retry',),
+        ).fetchone()
+        assert row == ('green', 'https://example.org/retried.pdf', 'repository', 'acceptedVersion', 'cc-by')
+        status_row = conn.execute(
+            'SELECT status, cache_hit FROM paper_oa_enrichment_status WHERE paper_id = ?',
+            ('paper_retry',),
+        ).fetchone()
+        assert status_row == ('ok', 0)

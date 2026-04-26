@@ -4,6 +4,7 @@ import json
 import sqlite3
 from pathlib import Path
 
+from mygooglealertpapers.db.schema import configure_connection
 from mygooglealertpapers.mail.candidate_extractor import PaperCandidateRaw
 from mygooglealertpapers.mail.message_parser import ParsedEmail
 
@@ -13,7 +14,10 @@ class Repository:
         self.db_path = db_path
 
     def connect(self) -> sqlite3.Connection:
-        return sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path)
+        configure_connection(conn)
+        conn.row_factory = sqlite3.Row
+        return conn
 
     def insert_mail_ingestion_record(
         self,
@@ -36,7 +40,7 @@ class Repository:
     ) -> None:
         conn.execute(
             """
-            INSERT INTO mail_ingestion_record (
+            INSERT OR IGNORE INTO mail_ingestion_record (
                 mail_uid, message_id, mailbox, internal_date, from_address, subject,
                 is_unseen_at_scan, scan_mode, is_google_scholar_alert, parse_status,
                 num_candidates_extracted, wall_time_ms, error_code, error_message
@@ -63,7 +67,7 @@ class Repository:
     def insert_raw_mail_snapshot(self, conn: sqlite3.Connection, *, mail_uid: str, parsed_email: ParsedEmail, snapshot_path: str | None = None) -> None:
         conn.execute(
             """
-            INSERT INTO raw_mail_snapshot (mail_uid, header_json, body_text, body_html, body_hash, snapshot_path)
+            INSERT OR IGNORE INTO raw_mail_snapshot (mail_uid, header_json, body_text, body_html, body_hash, snapshot_path)
             VALUES (?, ?, ?, ?, ?, ?)
             """,
             (
@@ -88,7 +92,7 @@ class Repository:
                 LIMIT 1
             )
             """,
-            (num_candidates_extracted, "candidates_extracted", mail_uid),
+            (num_candidates_extracted, 'candidates_extracted', mail_uid),
         )
 
     def insert_paper_candidates(self, conn: sqlite3.Connection, candidates: list[PaperCandidateRaw]) -> None:
@@ -209,7 +213,6 @@ class Repository:
         ).fetchone()
         return None if row is None else (row[0], row[1])
 
-
     def start_batch_run(self, conn: sqlite3.Connection, *, run_id: str, stage: str, requested_limit: int | None, notes: str | None = None) -> None:
         conn.execute(
             """
@@ -229,23 +232,52 @@ class Repository:
             (duration_ms, processed_count, status, notes, run_id),
         )
 
-
-    def get_query_cache(self, conn: sqlite3.Connection, *, provider: str, query_type: str, query_key: str):
+    def get_query_cache(self, conn: sqlite3.Connection, *, provider: str, query_type: str, query_key: str, field_set_hash: str = 'default', include_transient: bool = False):
+        clauses = [
+            'provider = ?',
+            'query_type = ?',
+            'query_key = ?',
+            'field_set_hash = ?',
+            '(expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP)',
+        ]
+        params: list[object] = [provider, query_type, query_key, field_set_hash]
+        if not include_transient:
+            clauses.append("cache_status IN ('positive_match', 'permanent_no_match')")
         return conn.execute(
-            "SELECT response_json FROM query_cache WHERE provider = ? AND query_type = ? AND query_key = ? ORDER BY id DESC LIMIT 1",
-            (provider, query_type, query_key),
+            f"SELECT response_json, cache_status, http_status, error_type, expires_at, field_set_hash FROM query_cache WHERE {' AND '.join(clauses)} ORDER BY id DESC LIMIT 1",
+            params,
         ).fetchone()
 
-    def put_query_cache(self, conn: sqlite3.Connection, *, provider: str, query_type: str, query_key: str, response_json: str) -> None:
+    def put_query_cache(
+        self,
+        conn: sqlite3.Connection,
+        *,
+        provider: str,
+        query_type: str,
+        query_key: str,
+        response_json: str,
+        cache_status: str,
+        http_status: int | None = None,
+        error_type: str | None = None,
+        expires_at: str | None = None,
+        field_set_hash: str = 'default',
+    ) -> None:
         conn.execute(
             '''
-            INSERT INTO query_cache (provider, query_type, query_key, response_json)
-            VALUES (?, ?, ?, ?)
-            ON CONFLICT(provider, query_type, query_key) DO UPDATE SET
+            INSERT INTO query_cache (
+                provider, query_type, query_key, response_json,
+                cache_status, http_status, error_type, expires_at, field_set_hash
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(provider, query_type, query_key, field_set_hash) DO UPDATE SET
                 response_json = excluded.response_json,
+                cache_status = excluded.cache_status,
+                http_status = excluded.http_status,
+                error_type = excluded.error_type,
+                expires_at = excluded.expires_at,
                 created_at = CURRENT_TIMESTAMP
             ''',
-            (provider, query_type, query_key, response_json),
+            (provider, query_type, query_key, response_json, cache_status, http_status, error_type, expires_at, field_set_hash),
         )
 
     def get_enrichment_status(self, conn: sqlite3.Connection, *, candidate_id: str, provider: str):
