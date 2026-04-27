@@ -1,26 +1,16 @@
 from __future__ import annotations
 
 import json
-import time
 import urllib.parse
-import urllib.request
 
 from mygooglealertpapers.enrich.base import EnrichmentRecord, accept_result
+from mygooglealertpapers.enrich.http_client import request_json
 
 
 BASE_FIELDS = 'title,authors,venue,year,externalIds,url'
 
 
-def _request_json(url: str, *, api_key: str | None = None, timeout: int = 20):
-    req = urllib.request.Request(url)
-    if api_key:
-        req.add_header('x-api-key', api_key)
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return json.loads(resp.read().decode('utf-8'))
-
-
 def query_semanticscholar(candidate_id: str, *, doi: str | None, title: str | None, first_author_family: str | None = None, venue_hint: str | None = None, query_year: str | None = None, api_key: str | None = None) -> EnrichmentRecord | None:
-    start = time.perf_counter()
     if doi:
         query_type = 'doi'
         query_string = doi
@@ -34,16 +24,18 @@ def query_semanticscholar(candidate_id: str, *, doi: str | None, title: str | No
         mode = 'search'
     else:
         return None
-    try:
-        payload = _request_json(url, api_key=api_key)
-    except Exception as e:
-        return EnrichmentRecord(candidate_id, 'semanticscholar', query_type, query_string, False, None, None, None, None, None, None, None, None, doi, None, None, None, json.dumps({'error': str(e)}), int((time.perf_counter()-start)*1000))
 
+    extra_headers = {'x-api-key': api_key} if api_key else None
+    response = request_json('semanticscholar', url, extra_headers=extra_headers)
+    if not response.ok:
+        return EnrichmentRecord(candidate_id, 'semanticscholar', query_type, query_string, False, None, None, None, None, None, None, None, None, doi, None, None, None, json.dumps(response.to_error_payload(), ensure_ascii=False), response.latency_ms)
+
+    payload = response.json_data if isinstance(response.json_data, dict) else {}
     item = payload if mode == 'paper' else ((payload.get('data') or [None])[0])
     if not item:
-        return EnrichmentRecord(candidate_id, 'semanticscholar', query_type, query_string, False, None, None, None, None, None, None, None, None, doi, None, None, None, json.dumps(payload, ensure_ascii=False), int((time.perf_counter()-start)*1000))
+        return EnrichmentRecord(candidate_id, 'semanticscholar', query_type, query_string, False, None, None, None, None, None, None, None, None, doi, None, None, None, json.dumps(payload, ensure_ascii=False), response.latency_ms)
 
-    authors = [a.get('name') for a in item.get('authors', []) if a.get('name')]
+    authors = [author.get('name') for author in item.get('authors', []) if author.get('name')]
     ext = item.get('externalIds') or {}
     venue = item.get('venue')
     year = str(item.get('year')) if item.get('year') else None
@@ -70,5 +62,5 @@ def query_semanticscholar(candidate_id: str, *, doi: str | None, title: str | No
         pmcid=ext.get('PubMedCentral'),
         url=item.get('url'),
         raw_payload_json=json.dumps(item, ensure_ascii=False),
-        latency_ms=int((time.perf_counter()-start)*1000),
+        latency_ms=response.latency_ms,
     )

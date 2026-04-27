@@ -343,7 +343,7 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
                 elif intent.provider == 'crossref':
                     rec = query_crossref(intent.candidate_id, doi=intent.doi, title=intent.norm_title, first_author_family=intent.first_author_family, venue_hint=intent.venue_guess, query_year=intent.year_guess, mailto=settings.crossref_mailto)
                 elif intent.provider == 'openalex':
-                    rec = query_openalex(intent.candidate_id, doi=intent.doi, title=intent.norm_title, first_author_family=intent.first_author_family, venue_hint=intent.venue_guess, query_year=intent.year_guess)
+                    rec = query_openalex(intent.candidate_id, doi=intent.doi, title=intent.norm_title, first_author_family=intent.first_author_family, venue_hint=intent.venue_guess, query_year=intent.year_guess, email=settings.openalex_email)
                 elif intent.provider == 'unpaywall':
                     rec = query_unpaywall(intent.candidate_id, doi=intent.doi, email=settings.unpaywall_email)
                 else:

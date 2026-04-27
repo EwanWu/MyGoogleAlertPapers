@@ -10,6 +10,7 @@ from mygooglealertpapers.pipeline.ingest import parse_and_extract_candidates, sc
 from mygooglealertpapers.pipeline.local_import import import_local_body_snapshots, validate_local_body_input
 from mygooglealertpapers.pipeline.normalize import normalize_candidates
 from mygooglealertpapers.pipeline.enrich import enrich_candidates
+from mygooglealertpapers.pipeline.enrichment_plan import build_enrichment_plan
 from mygooglealertpapers.pipeline.enrich_stats import build_enrichment_stats
 from mygooglealertpapers.pipeline.merge import build_merged_metadata
 from mygooglealertpapers.pipeline.merge_stats import build_merge_stats
@@ -61,6 +62,9 @@ def build_parser() -> argparse.ArgumentParser:
     normalize_parser.add_argument("--limit", type=int, default=100)
 
     subparsers.add_parser("report-batch", help="Show a lightweight batch report")
+    enrichment_plan_parser = subparsers.add_parser("report-enrichment-plan", help="Show the current enrichment-intent shape and dedup opportunities")
+    enrichment_plan_parser.add_argument("--limit", type=int, default=100)
+    enrichment_plan_parser.add_argument("--output", type=str, default=None)
     enrich_parser = subparsers.add_parser("enrich-candidates", help="Enrich normalized candidates")
     enrich_parser.add_argument("--limit", type=int, default=100)
 
@@ -138,6 +142,11 @@ def main() -> None:
         normalize_candidates(settings, limit=args.limit)
     elif args.command == "report-batch":
         print(build_batch_report(settings.sqlite_path))
+    elif args.command == "report-enrichment-plan":
+        output_path = Path(args.output) if args.output else None
+        if output_path is not None and not output_path.is_absolute():
+            output_path = settings.workspace_root / output_path
+        print(build_enrichment_plan(settings, limit=args.limit, output_path=output_path))
     elif args.command == "enrich-candidates":
         enrich_candidates(settings, limit=args.limit)
     elif args.command == "report-normalization":

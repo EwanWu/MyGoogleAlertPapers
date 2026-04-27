@@ -12,6 +12,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 
+from mygooglealertpapers.db.schema import create_schema
+
 DIRTY_DOI_SQL = """
 SELECT COUNT(*)
 FROM paper_candidate_normalized
@@ -257,6 +259,8 @@ def main() -> None:
     output_db.parent.mkdir(parents=True, exist_ok=True)
     report_out.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(source_db, output_db)
+    with sqlite3.connect(output_db) as conn:
+        create_schema(conn)
 
     # Determine which stages to actually run; --reuse-source-records-from skips enrich
     stages_to_run = list(args.stages)
