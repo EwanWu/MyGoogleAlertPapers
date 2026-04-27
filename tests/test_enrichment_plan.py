@@ -75,8 +75,29 @@ def test_build_enrichment_plan_counts_dedup_opportunities_and_writes_markdown(tm
     assert summary['title_search_intents'] == 5
     assert summary['identifier_driven_unique_intents'] == 3
     assert summary['title_search_unique_intents'] == 5
+    assert summary['dedup_only_request_count'] == 8
+    assert summary['recommended_request_count'] == 8
+    assert summary['request_savings_vs_naive'] == 3
+    assert summary['request_savings_vs_dedup_only'] == 0
     assert summary['provider_breakdown'][0]['provider'] == 'crossref'
+
+    strategy_rows = {(row['provider'], row['query_type']): row for row in summary['request_strategy_breakdown']}
+    assert strategy_rows[('openalex', 'doi')]['recommended_execution_mode'] == 'batch_after_dedup'
+    assert strategy_rows[('openalex', 'doi')]['recommended_request_count'] == 1
+    assert strategy_rows[('openalex', 'doi')]['request_savings_vs_naive'] == 1
+    assert strategy_rows[('openalex', 'doi')]['request_savings_vs_dedup_only'] == 0
+    assert strategy_rows[('crossref', 'doi')]['recommended_execution_mode'] == 'dedup_only'
+    assert strategy_rows[('crossref', 'doi')]['recommended_request_count'] == 1
+
+    top_group = summary['top_duplicate_query_groups'][0]
+    assert top_group['provider'] == 'crossref'
+    assert top_group['query_type'] == 'doi'
+    assert top_group['candidate_count'] == 2
+    assert top_group['extra_intents'] == 1
+
     assert output_path.exists()
     markdown = output_path.read_text(encoding='utf-8')
     assert 'Provider breakdown' in markdown
+    assert 'Execution recommendations' in markdown
     assert '| crossref | 3 | 2 | 1 |' in markdown
+    assert '| openalex | doi | batch_after_dedup | 2 | 1 | 1 | 1 | 0 |' in markdown
