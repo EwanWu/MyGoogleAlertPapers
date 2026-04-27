@@ -106,3 +106,33 @@ Long validation runs should now assume the need for:
 - progress logging during enrich
 - periodic checkpointing where helpful
 - explicit follow-up/monitoring logic rather than assuming completion will surface automatically
+
+
+## Runtime-optimization validation update (2026-04-27)
+
+The project now has a second validation class beyond policy comparison:
+
+> **runtime/scheduling optimization validation**
+
+Examples:
+- dispatch dedup
+- context-aware cache keys
+- batching changes
+- shared title payload reuse
+
+### Current rule
+For runtime optimizations, the preferred evidence order is:
+
+1. fixed-seed replay
+2. recorded HTTP fixture replay if live providers add jitter
+3. candidate-level semantic diff, not just aggregate counts
+
+### Semantic comparison target
+When deciding whether a runtime optimization can become default, compare at minimum:
+- `source_record`
+- `merged_metadata_proposal`
+- `merge_review_queue`
+- `canonical_paper`
+- `candidate_paper_link`
+
+Raw regenerated IDs should not be treated as semantic differences if the canonical content and candidate-to-paper semantic mapping are unchanged.

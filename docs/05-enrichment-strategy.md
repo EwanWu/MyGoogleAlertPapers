@@ -104,3 +104,36 @@ Recommended command-level shape:
 - `mgap dedup-candidates`
 - `mgap enrich-paper-oa`
 
+
+
+## Runtime orchestration update (2026-04-27)
+
+The current enrichment strategy must now be read as both a **provider-selection policy** and a **request-scheduling policy**.
+
+### Runtime defaults now established
+- identifier queries should be dispatch-deduplicated
+- title queries should only be merged when the context is safe
+- enrichment cache keys should include context-sensitive `field_set_hash`
+- OpenAlex DOI lookup should exploit batching when possible
+- duplicated title queries on `crossref`, `openalex`, and `semanticscholar` should reuse provider fetch payloads by default
+
+### Important constraint
+The promoted title-payload reuse rule is intentionally narrow:
+- share fetch/payload only
+- keep per-candidate record build
+- keep per-candidate match acceptance
+- keep per-candidate cache writes
+
+So this is not a relaxation of metadata-matching standards. It is a transport/runtime optimization.
+
+### Current evaluation rule for runtime optimizations
+Do not judge runtime changes by request count alone.
+
+On a fixed seed, always terminate comparison in:
+1. `source_record`
+2. `merged_metadata_proposal`
+3. `merge_review_queue`
+4. `canonical_paper`
+5. `candidate_paper_link`
+
+If live-provider noise is present, use recorded-payload replay as the semantic judge.

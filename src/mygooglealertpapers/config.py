@@ -76,9 +76,9 @@ def _default_policy_profile() -> PolicyProfile:
     raw = {
         'profile_name': 'builtin_default',
         'provider_rules': {
-            'crossref': {'enabled': True},
-            'openalex': {'enabled': True, 'doi_batch_enabled': True},
-            'semanticscholar': {'enabled': True},
+            'crossref': {'enabled': True, 'title_payload_reuse_enabled': True},
+            'openalex': {'enabled': True, 'doi_batch_enabled': True, 'title_payload_reuse_enabled': True},
+            'semanticscholar': {'enabled': True, 'title_payload_reuse_enabled': True},
             'pubmed': {'enabled': True, 'fallback_only_for_core_fields': True},
             'europepmc': {'enabled': True, 'trigger_mode': 'narrowed_biomedical_fallback'},
             'arxiv': {'enabled': True, 'trigger_mode': 'arxiv_native_only'},

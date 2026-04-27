@@ -17,11 +17,14 @@ notes:
 provider_rules:
   crossref:
     enabled: true
+    title_payload_reuse_enabled: true
   openalex:
     enabled: true
     doi_batch_enabled: true
+    title_payload_reuse_enabled: true
   semanticscholar:
     enabled: true
+    title_payload_reuse_enabled: true
   pubmed:
     enabled: true
     fallback_only_for_core_fields: true

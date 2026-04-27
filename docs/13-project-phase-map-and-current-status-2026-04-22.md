@@ -1,4 +1,4 @@
-# Project phase map and current status (2026-04-22)
+# Project phase map and current status (updated 2026-04-27)
 
 ## Purpose
 
@@ -14,9 +14,9 @@ Read this first if you need the shortest path to:
 
 The project is now in:
 
-> **mainline convergence / default-flow solidification**
+> **default-flow operational hardening / request-scheduling optimization promotion**
 
-The pipeline is no longer mainly exploring strategy space. The current work is about locking one coherent default path, keeping only narrow retained patches, and validating that path on new slices.
+The pipeline is no longer mainly exploring strategy space. The current work is about locking one coherent default path, hardening the operator/runtime boundary around it, and only promoting narrow request-efficiency optimizations after deterministic replay evidence.
 
 ## Current default pipeline
 
@@ -30,6 +30,12 @@ Operationally:
 5. `merge-metadata`
 6. `dedup-candidates`
 7. `enrich-paper-oa`
+
+Runtime defaults now additionally assume:
+- safe dispatch dedup
+- context-aware enrichment cache keys
+- OpenAlex DOI batching
+- title payload reuse enabled by default for `crossref` / `openalex` / `semanticscholar`
 
 ## Stable project decisions
 
@@ -62,23 +68,24 @@ Canonical integrated validation artifact:
 
 ## Active document set to read now
 
-1. `docs/13-project-phase-map-and-current-status-2026-04-22.md`
-2. `docs/14-mainline-promotion-memo-2026-04-22.md`
-3. `docs/11-packageB-decision-memo-2026-04-16.md`
-4. `docs/12-packageB-phase-summary-and-archive-guide-2026-04-16.md`
-5. `docs/09-packageA-implementation-and-replay-results-2026-04-15.md`
-6. `docs/validation/trackA-author-blob-fb-decision-20260421c.md`
-7. `docs/validation/trackB-unpaywall-decision-memo-20260422.md`
-8. `docs/validation/mainline-summary-20260422_mainline.md`
+1. `docs/16-day2-day3-hardening-and-title-reuse-promotion-2026-04-27.md`
+2. `docs/13-project-phase-map-and-current-status-2026-04-22.md`
+3. `docs/14-mainline-promotion-memo-2026-04-22.md`
+4. `docs/11-packageB-decision-memo-2026-04-16.md`
+5. `docs/12-packageB-phase-summary-and-archive-guide-2026-04-16.md`
+6. `docs/09-packageA-implementation-and-replay-results-2026-04-15.md`
+7. `docs/validation/trackA-author-blob-fb-decision-20260421c.md`
+8. `docs/validation/trackB-unpaywall-decision-memo-20260422.md`
+9. `docs/validation/mainline-summary-20260422_mainline.md`
 
 ## What is still open
 
-The main unresolved problem is no longer policy ranking within this branch. It is **generalization**.
+The main unresolved problem is no longer whether narrow Day 3 runtime optimizations should ship. The current unresolved problem is **generalization plus higher-yield scheduling/batching**.
 
 The next useful validation is:
-- run the converged mainline on a genuinely fresh slice
-- preferably from new mailbox data if IMAP access is restored
-- otherwise from a previously unused local cached slice
+- preserve the current promoted mainline/runtime defaults
+- run them on a genuinely fresh slice or a larger fixed slice
+- prioritize higher-yield request-reduction opportunities that can still be judged by fixed-seed replay
 
 ## What should not be reopened casually
 

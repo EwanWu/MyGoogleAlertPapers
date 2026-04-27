@@ -1,5 +1,7 @@
 # Three-day execution plan (2026-04-26)
 
+> Execution outcome note (2026-04-27): this plan has now been executed for the Day 2 / Day 3 hardening window. Read `docs/16-day2-day3-hardening-and-title-reuse-promotion-2026-04-27.md` for the consolidated result and current default interpretation.
+
 ## Purpose
 
 This document turns the 2026-04-26 blueprint report into a **short-horizon execution plan** that can be followed directly by a human developer or AI agent.
