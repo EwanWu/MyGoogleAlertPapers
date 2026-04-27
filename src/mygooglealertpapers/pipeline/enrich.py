@@ -11,10 +11,10 @@ from mygooglealertpapers.config import Settings
 from mygooglealertpapers.cost.tracker import CostTracker
 from mygooglealertpapers.db.repository import Repository
 from mygooglealertpapers.enrich.base import cache_metadata_from_record, cache_status_from_record, enrichment_record_from_json, enrichment_record_to_json
-from mygooglealertpapers.enrich.crossref import query_crossref
-from mygooglealertpapers.enrich.openalex import _extract_primary_location_fields, query_openalex, query_openalex_batch_by_doi
+from mygooglealertpapers.enrich.crossref import build_crossref_record, fetch_crossref_title_item, query_crossref
+from mygooglealertpapers.enrich.openalex import _extract_primary_location_fields, build_openalex_record, fetch_openalex_title_item, query_openalex, query_openalex_batch_by_doi
 from mygooglealertpapers.enrich.pubmed import query_pubmed
-from mygooglealertpapers.enrich.semanticscholar import query_semanticscholar
+from mygooglealertpapers.enrich.semanticscholar import build_semanticscholar_record, fetch_semanticscholar_title_item, query_semanticscholar
 from mygooglealertpapers.enrich.europepmc import query_europepmc
 from mygooglealertpapers.enrich.arxiv import query_arxiv
 from mygooglealertpapers.enrich.unpaywall import query_unpaywall
@@ -252,7 +252,7 @@ def _cache_field_set_hash(intent: ProviderIntent) -> str:
     return f'ctx_{digest[:16]}'
 
 
-def _build_dispatch_groups(runnable_intents: list[ProviderIntent]) -> list[DispatchGroup]:
+def _build_dispatch_groups(settings: Settings, runnable_intents: list[ProviderIntent]) -> list[DispatchGroup]:
     grouped: dict[tuple[str, str, str], list[ProviderIntent]] = {}
     ordered_keys: list[tuple[str, str, str]] = []
     for intent in runnable_intents:
@@ -267,6 +267,9 @@ def _build_dispatch_groups(runnable_intents: list[ProviderIntent]) -> list[Dispa
         intents = grouped[key]
         representative = intents[0]
         if len(intents) == 1:
+            dispatch_groups.append(DispatchGroup(representative=representative, intents=intents))
+            continue
+        if representative.query_type == 'title' and _provider_title_payload_reuse_enabled(settings, representative.provider):
             dispatch_groups.append(DispatchGroup(representative=representative, intents=intents))
             continue
         dedup_safe = representative.query_type in IDENTIFIER_QUERY_TYPES or len({_dispatch_signature(intent) for intent in intents}) == 1
@@ -290,9 +293,9 @@ def _start_group_statuses(repo: Repository, conn, group: DispatchGroup, *, query
         )
 
 
-def _fanout_result_to_group(repo: Repository, tracker: CostTracker, conn, group: DispatchGroup, rec, *, cache_hit: bool, notes: str | None = None) -> int:
-    status = 'ok' if rec.matched else 'no_match'
-    for idx, intent in enumerate(group.intents):
+def _fanout_records_to_group(repo: Repository, tracker: CostTracker, conn, group: DispatchGroup, records: list, *, cache_hit: bool, notes: str | None = None) -> int:
+    for idx, (intent, rec) in enumerate(zip(group.intents, records, strict=True)):
+        status = 'ok' if rec.matched else 'no_match'
         emitted_rec = _clone_record_for_candidate(rec, intent.candidate_id, latency_ms=0 if cache_hit or idx > 0 else rec.latency_ms)
         source_record_id = _insert_source_record(repo, conn, emitted_rec)
         repo.finish_enrichment_status(
@@ -314,7 +317,11 @@ def _fanout_result_to_group(repo: Repository, tracker: CostTracker, conn, group:
             latency_ms=emitted_rec.latency_ms,
             notes=notes,
         )
-    return len(group.intents)
+    return len(records)
+
+
+def _fanout_result_to_group(repo: Repository, tracker: CostTracker, conn, group: DispatchGroup, rec, *, cache_hit: bool, notes: str | None = None) -> int:
+    return _fanout_records_to_group(repo, tracker, conn, group, [rec for _ in group.intents], cache_hit=cache_hit, notes=notes)
 
 
 def _fanout_error_to_group(repo: Repository, tracker: CostTracker, conn, group: DispatchGroup, *, error_summary: str, notes: str | None = None) -> int:
@@ -326,6 +333,69 @@ def _fanout_error_to_group(repo: Repository, tracker: CostTracker, conn, group: 
 
 def _group_field_set_hash(group: DispatchGroup) -> str:
     return _cache_field_set_hash(group.representative)
+
+
+def _provider_title_payload_reuse_enabled(settings: Settings, provider: str) -> bool:
+    return bool(_provider_value(settings, provider, 'title_payload_reuse_enabled', False))
+
+
+def _build_title_reused_records(settings: Settings, group: DispatchGroup):
+    title = group.representative.norm_title
+    if not title:
+        return None
+    provider = group.provider
+    if provider == 'crossref':
+        item, raw_payload_json, latency_ms = fetch_crossref_title_item(title, mailto=settings.crossref_mailto)
+        return [
+            build_crossref_record(
+                intent.candidate_id,
+                query_type='title',
+                query_string=title,
+                doi=intent.doi,
+                item=item,
+                raw_payload_json=raw_payload_json,
+                latency_ms=latency_ms,
+                first_author_family=intent.first_author_family,
+                venue_hint=intent.venue_guess,
+                query_year=intent.year_guess,
+            )
+            for intent in group.intents
+        ]
+    if provider == 'openalex':
+        item, raw_payload_json, latency_ms = fetch_openalex_title_item(title, email=settings.openalex_email)
+        return [
+            build_openalex_record(
+                intent.candidate_id,
+                query_type='title',
+                query_string=title,
+                doi=intent.doi,
+                item=item,
+                raw_payload_json=raw_payload_json,
+                latency_ms=latency_ms,
+                first_author_family=intent.first_author_family,
+                venue_hint=intent.venue_guess,
+                query_year=intent.year_guess,
+            )
+            for intent in group.intents
+        ]
+    if provider == 'semanticscholar':
+        item, raw_payload_json, latency_ms = fetch_semanticscholar_title_item(title, api_key=settings.semantic_scholar_api_key)
+        return [
+            build_semanticscholar_record(
+                intent.candidate_id,
+                query_type='title',
+                query_string=title,
+                doi=intent.doi,
+                item=item,
+                raw_payload_json=raw_payload_json,
+                latency_ms=latency_ms,
+                first_author_family=intent.first_author_family,
+                venue_hint=intent.venue_guess,
+                query_year=intent.year_guess,
+            )
+            for intent in group.intents
+        ]
+    return None
 
 
 def _execute_provider_query(settings: Settings, intent: ProviderIntent):
@@ -369,7 +439,7 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
             all_intents.extend(_build_provider_intents(settings, row))
 
         runnable_intents = [intent for intent in all_intents if _should_run_provider(repo, conn, intent)]
-        dispatch_groups = _build_dispatch_groups(runnable_intents)
+        dispatch_groups = _build_dispatch_groups(settings, runnable_intents)
         logger.info(
             'Planned %s provider intent(s); %s need work; %s dispatch group(s) after safe dedup',
             len(all_intents),
@@ -378,6 +448,19 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
         )
 
         openalex_doi_batch_enabled = bool(_provider_value(settings, 'openalex', 'doi_batch_enabled', True))
+        dispatch_stats = {
+            'planned_provider_intents': len(all_intents),
+            'runnable_provider_intents': len(runnable_intents),
+            'dispatch_group_count': len(dispatch_groups),
+            'openalex_batch_request_count': 0,
+            'non_batch_dispatch_request_count': 0,
+            'cache_hit_group_count': 0,
+            'fanout_candidate_count': sum(max(len(group.intents) - 1, 0) for group in dispatch_groups),
+            'shared_title_reuse_group_count': 0,
+            'shared_title_reuse_intent_count': 0,
+            'shared_title_reuse_request_count': 0,
+            'shared_title_reuse_request_savings': 0,
+        }
         openalex_doi_groups = [
             group for group in dispatch_groups
             if openalex_doi_batch_enabled and group.provider == 'openalex' and group.query_type == 'doi' and group.representative.doi
@@ -396,6 +479,7 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
             doi_values = list(doi_to_group.keys())
             for i in range(0, len(doi_values), 50):
                 chunk = doi_values[i:i + 50]
+                dispatch_stats['openalex_batch_request_count'] += 1
                 logger.info('OpenAlex DOI batch chunk %s-%s / %s DOI(s)', i + 1, i + len(chunk), len(doi_values))
                 try:
                     results = query_openalex_batch_by_doi(chunk, email=settings.openalex_email)
@@ -490,11 +574,67 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
             _start_group_statuses(repo, conn, group)
             field_set_hash = _group_field_set_hash(group)
             cached = repo.get_query_cache(conn, provider=group.provider, query_type=group.query_type, query_key=group.query_key, field_set_hash=field_set_hash)
+            dispatch_stats['non_batch_dispatch_request_count'] += 1
             if cached:
                 cached_rec = enrichment_record_from_json(cached[0])
                 if cache_status_from_record(cached_rec) != 'transient_error':
+                    dispatch_stats['cache_hit_group_count'] += 1
                     rec = _record_from_cache(group.representative, cached[0])
                     processed_intents += _fanout_result_to_group(repo, tracker, conn, group, rec, cache_hit=True)
+                    if processed_intents % PROGRESS_EVERY == 0:
+                        logger.info('Enrich progress: processed %s / %s runnable intent(s)', processed_intents, len(runnable_intents))
+                        conn.commit()
+                    continue
+
+            shared_title_reuse = group.query_type == 'title' and len(group.intents) > 1 and _provider_title_payload_reuse_enabled(settings, group.provider)
+            if shared_title_reuse:
+                try:
+                    records = _build_title_reused_records(settings, group)
+                except Exception as exc:
+                    from mygooglealertpapers.enrich.base import EnrichmentRecord
+                    rec = EnrichmentRecord(
+                        candidate_id=group.representative.candidate_id,
+                        source_name=group.provider,
+                        query_type=group.query_type,
+                        query_string=group.query_key,
+                        matched=False,
+                        match_score=None,
+                        external_id=None,
+                        title=None,
+                        authors_json=None,
+                        abstract=None,
+                        venue=None,
+                        year=None,
+                        publication_type=None,
+                        doi=group.representative.doi,
+                        pmid=group.representative.pmid,
+                        pmcid=None,
+                        url=None,
+                        raw_payload_json=json.dumps({'status': 'error', 'provider': group.provider, 'error': str(exc)}, ensure_ascii=False),
+                        latency_ms=0,
+                    )
+                    repo.put_query_cache(conn, provider=group.provider, query_type=group.query_type, query_key=group.query_key, response_json=enrichment_record_to_json(rec), **cache_metadata_from_record(rec, field_set_hash=field_set_hash))
+                    processed_intents += _fanout_error_to_group(repo, tracker, conn, group, error_summary=str(exc), notes='shared_title_reuse_error')
+                    if processed_intents % PROGRESS_EVERY == 0:
+                        logger.info('Enrich progress: processed %s / %s runnable intent(s)', processed_intents, len(runnable_intents))
+                        conn.commit()
+                    continue
+
+                if records is not None:
+                    dispatch_stats['shared_title_reuse_group_count'] += 1
+                    dispatch_stats['shared_title_reuse_intent_count'] += len(group.intents)
+                    dispatch_stats['shared_title_reuse_request_count'] += 1
+                    dispatch_stats['shared_title_reuse_request_savings'] += max(len(group.intents) - 1, 0)
+                    for intent, rec in zip(group.intents, records, strict=True):
+                        repo.put_query_cache(
+                            conn,
+                            provider=group.provider,
+                            query_type=group.query_type,
+                            query_key=group.query_key,
+                            response_json=enrichment_record_to_json(rec),
+                            **cache_metadata_from_record(rec, field_set_hash=_cache_field_set_hash(intent)),
+                        )
+                    processed_intents += _fanout_records_to_group(repo, tracker, conn, group, records, cache_hit=False, notes='shared_title_reuse')
                     if processed_intents % PROGRESS_EVERY == 0:
                         logger.info('Enrich progress: processed %s / %s runnable intent(s)', processed_intents, len(runnable_intents))
                         conn.commit()
@@ -568,5 +708,14 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
                 logger.info('Enrich progress: processed %s / %s runnable intent(s)', processed_intents, len(runnable_intents))
                 conn.commit()
 
-        repo.finish_batch_run(conn, run_id=run_id, duration_ms=int((time.perf_counter() - started_at) * 1000), processed_count=processed_intents, status='ok')
+        dispatch_stats['dispatch_request_count'] = dispatch_stats['openalex_batch_request_count'] + dispatch_stats['non_batch_dispatch_request_count']
+        dispatch_stats['request_savings_vs_runnable_intents'] = dispatch_stats['runnable_provider_intents'] - dispatch_stats['dispatch_request_count']
+        repo.finish_batch_run(
+            conn,
+            run_id=run_id,
+            duration_ms=int((time.perf_counter() - started_at) * 1000),
+            processed_count=processed_intents,
+            status='ok',
+            notes=json.dumps(dispatch_stats, ensure_ascii=False),
+        )
         conn.commit()

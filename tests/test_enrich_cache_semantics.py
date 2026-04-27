@@ -205,6 +205,15 @@ def test_enrich_candidates_dispatch_dedups_identical_title_queries(tmp_path: Pat
             ('crossref',),
         ).fetchone()[0]
         assert total_latency == 42
+        notes = conn.execute(
+            "SELECT notes FROM batch_run WHERE stage = 'enrich_candidates' ORDER BY id DESC LIMIT 1"
+        ).fetchone()[0]
+        stats = json.loads(notes)
+        assert stats['dispatch_group_count'] == 1
+        assert stats['dispatch_request_count'] == 1
+        assert stats['request_savings_vs_runnable_intents'] == 1
+        assert stats['shared_title_reuse_group_count'] == 0
+        assert stats['shared_title_reuse_request_savings'] == 0
 
 
 def test_enrich_candidates_uses_context_aware_cache_keys_for_mismatched_title_context(tmp_path: Path, monkeypatch):
@@ -279,3 +288,69 @@ def test_enrich_candidates_uses_context_aware_cache_keys_for_mismatched_title_co
             ('crossref', 'title', 'Shared But Context-Sensitive Title'),
         ).fetchone()[0]
         assert cache_key_count == 2
+
+
+def test_experimental_title_payload_reuse_shares_request_without_relaxing_match(tmp_path: Path, monkeypatch):
+    db_path = tmp_path / 'mgap.db'
+    create_schema_at_default_path(db_path)
+    settings = _make_settings(db_path)
+    settings.policy_profile.provider_rules['crossref']['title_payload_reuse_enabled'] = True
+
+    with sqlite3.connect(db_path) as conn:
+        conn.executemany(
+            '''
+            INSERT INTO paper_candidate_normalized (
+                candidate_id, norm_title, norm_title_key, first_author_family, venue_guess, year_guess
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            ''',
+            [
+                ('cand_exp1', 'Experimental Shared Title', 'experimental shared title', 'Wu', 'Nature', '2026'),
+                ('cand_exp2', 'Experimental Shared Title', 'experimental shared title', 'Li', 'Nature', '2025'),
+            ],
+        )
+        conn.commit()
+
+    calls = {'count': 0}
+
+    def fake_fetch_crossref_title_item(title: str, *, mailto: str | None = None):
+        calls['count'] += 1
+        item = {
+            'DOI': '10.1000/exp',
+            'title': ['Experimental Shared Title'],
+            'author': [{'given': 'Yue', 'family': 'Wu'}],
+            'container-title': ['Nature'],
+            'published-print': {'date-parts': [[2026]]},
+            'type': 'journal-article',
+            'URL': 'https://doi.org/10.1000/exp',
+        }
+        return item, json.dumps(item, ensure_ascii=False), 42
+
+    monkeypatch.setattr('mygooglealertpapers.pipeline.enrich.fetch_crossref_title_item', fake_fetch_crossref_title_item)
+
+    enrich_candidates(settings, limit=10)
+
+    assert calls['count'] == 1
+    with sqlite3.connect(db_path) as conn:
+        statuses = conn.execute(
+            '''
+            SELECT candidate_id, status, cache_hit, latency_ms
+            FROM candidate_enrichment_status
+            WHERE provider = 'crossref'
+            ORDER BY candidate_id
+            '''
+        ).fetchall()
+        assert statuses == [
+            ('cand_exp1', 'ok', 0, 42),
+            ('cand_exp2', 'no_match', 0, 0),
+        ]
+        notes = conn.execute(
+            "SELECT notes FROM batch_run WHERE stage = 'enrich_candidates' ORDER BY id DESC LIMIT 1"
+        ).fetchone()[0]
+        stats = json.loads(notes)
+        assert stats['dispatch_group_count'] == 1
+        assert stats['dispatch_request_count'] == 1
+        assert stats['request_savings_vs_runnable_intents'] == 1
+        assert stats['shared_title_reuse_group_count'] == 1
+        assert stats['shared_title_reuse_intent_count'] == 2
+        assert stats['shared_title_reuse_request_count'] == 1
+        assert stats['shared_title_reuse_request_savings'] == 1

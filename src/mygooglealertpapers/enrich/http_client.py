@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import json
+import os
 import random
 import socket
 import time
 import urllib.error
 import urllib.request
+from collections import defaultdict, deque
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
+from pathlib import Path
 from typing import Any
 
 
@@ -17,6 +20,10 @@ DEFAULT_MAX_RETRIES = 2
 DEFAULT_RETRY_STATUSES = frozenset({408, 429, 500, 502, 503, 504})
 DEFAULT_TOOL_NAME = 'MyGoogleAlertPapers'
 DEFAULT_TOOL_VERSION = '0.1'
+REPLAY_ENV = 'MGAP_HTTP_FIXTURE_REPLAY_PATH'
+RECORD_ENV = 'MGAP_HTTP_FIXTURE_RECORD_PATH'
+_REPLAY_CACHE: dict[str, deque[dict[str, Any]]] | None = None
+_REPLAY_CACHE_PATH: str | None = None
 
 
 @dataclass(slots=True)
@@ -125,6 +132,76 @@ def _open(request: urllib.request.Request, *, timeout: int, opener=None):
     return urllib.request.urlopen(request, timeout=timeout)
 
 
+def _fixture_key(provider: str, url: str) -> str:
+    return json.dumps({'provider': provider, 'url': url}, ensure_ascii=False, sort_keys=True)
+
+
+def _load_replay_cache(path: str) -> dict[str, deque[dict[str, Any]]]:
+    cache: dict[str, deque[dict[str, Any]]] = defaultdict(deque)
+    fixture_path = Path(path)
+    if not fixture_path.exists():
+        raise RuntimeError(f'HTTP fixture replay file not found: {fixture_path}')
+    for line in fixture_path.read_text(encoding='utf-8').splitlines():
+        if not line.strip():
+            continue
+        payload = json.loads(line)
+        key = _fixture_key(str(payload['provider']), str(payload['url']))
+        cache[key].append(payload)
+    return cache
+
+
+def _replay_result(provider: str, url: str) -> HttpResult | None:
+    global _REPLAY_CACHE, _REPLAY_CACHE_PATH
+    replay_path = os.environ.get(REPLAY_ENV)
+    if not replay_path:
+        return None
+    if _REPLAY_CACHE is None or _REPLAY_CACHE_PATH != replay_path:
+        _REPLAY_CACHE = _load_replay_cache(replay_path)
+        _REPLAY_CACHE_PATH = replay_path
+    key = _fixture_key(provider, url)
+    queue = _REPLAY_CACHE.get(key)
+    if not queue:
+        raise RuntimeError(f'HTTP fixture miss for provider={provider} url={url}')
+    payload = queue[0] if len(queue) == 1 else queue.popleft()
+    return HttpResult(
+        ok=bool(payload['ok']),
+        provider=str(payload['provider']),
+        url=str(payload['url']),
+        status_code=payload.get('status_code'),
+        body_text=payload.get('body_text'),
+        json_data=None,
+        error=payload.get('error'),
+        error_type=payload.get('error_type'),
+        retry_after_seconds=payload.get('retry_after_seconds'),
+        attempts=int(payload.get('attempts', 1)),
+        latency_ms=int(payload.get('latency_ms', 0)),
+        headers={str(k): str(v) for k, v in (payload.get('headers') or {}).items()},
+    )
+
+
+def _record_result(result: HttpResult) -> None:
+    record_path = os.environ.get(RECORD_ENV)
+    if not record_path:
+        return
+    payload = {
+        'ok': result.ok,
+        'provider': result.provider,
+        'url': result.url,
+        'status_code': result.status_code,
+        'body_text': result.body_text,
+        'error': result.error,
+        'error_type': result.error_type,
+        'retry_after_seconds': result.retry_after_seconds,
+        'attempts': result.attempts,
+        'latency_ms': result.latency_ms,
+        'headers': result.headers,
+    }
+    path = Path(record_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open('a', encoding='utf-8') as fh:
+        fh.write(json.dumps(payload, ensure_ascii=False) + '\n')
+
+
 def request_text(
     provider: str,
     url: str,
@@ -136,6 +213,10 @@ def request_text(
     retry_statuses: set[int] | frozenset[int] = DEFAULT_RETRY_STATUSES,
     opener=None,
 ) -> HttpResult:
+    replayed = _replay_result(provider, url)
+    if replayed is not None:
+        return replayed
+
     started_at = time.perf_counter()
     attempts = 0
     headers = build_headers(provider, contact_email=contact_email, extra_headers=extra_headers)
@@ -146,7 +227,7 @@ def request_text(
         try:
             with _open(request, timeout=timeout, opener=opener) as response:
                 body_text = response.read().decode('utf-8', errors='replace')
-                return HttpResult(
+                result = HttpResult(
                     ok=True,
                     provider=provider,
                     url=url,
@@ -160,13 +241,15 @@ def request_text(
                     latency_ms=int((time.perf_counter() - started_at) * 1000),
                     headers={k: str(v) for k, v in response.headers.items()},
                 )
+                _record_result(result)
+                return result
         except urllib.error.HTTPError as exc:
             body_text = exc.read().decode('utf-8', errors='replace') if exc.fp else None
             retry_after_seconds = _parse_retry_after(exc.headers.get('Retry-After')) if exc.headers else None
             if exc.code in retry_statuses and attempts <= max_retries:
                 time.sleep(_sleep_seconds(attempts, retry_after_seconds))
                 continue
-            return HttpResult(
+            result = HttpResult(
                 ok=False,
                 provider=provider,
                 url=url,
@@ -180,6 +263,8 @@ def request_text(
                 latency_ms=int((time.perf_counter() - started_at) * 1000),
                 headers={k: str(v) for k, v in (exc.headers.items() if exc.headers else [])},
             )
+            _record_result(result)
+            return result
         except urllib.error.URLError as exc:
             message = str(exc.reason or exc)
             is_timeout = isinstance(exc.reason, (TimeoutError, socket.timeout)) or 'timed out' in message.casefold()
@@ -187,7 +272,7 @@ def request_text(
             if attempts <= max_retries:
                 time.sleep(_sleep_seconds(attempts, None))
                 continue
-            return HttpResult(
+            result = HttpResult(
                 ok=False,
                 provider=provider,
                 url=url,
@@ -201,11 +286,13 @@ def request_text(
                 latency_ms=int((time.perf_counter() - started_at) * 1000),
                 headers={},
             )
+            _record_result(result)
+            return result
         except socket.timeout as exc:
             if attempts <= max_retries:
                 time.sleep(_sleep_seconds(attempts, None))
                 continue
-            return HttpResult(
+            result = HttpResult(
                 ok=False,
                 provider=provider,
                 url=url,
@@ -219,6 +306,8 @@ def request_text(
                 latency_ms=int((time.perf_counter() - started_at) * 1000),
                 headers={},
             )
+            _record_result(result)
+            return result
 
 
 def request_json(

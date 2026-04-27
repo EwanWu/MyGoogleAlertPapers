@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import json
 import urllib.error
 from email.message import Message
 
@@ -69,3 +70,36 @@ def test_request_json_marks_invalid_json(monkeypatch):
     assert result.ok is False
     assert result.error_type == 'invalid_json'
     assert result.status_code == 200
+
+
+def test_request_json_can_record_and_replay_fixtures(tmp_path, monkeypatch):
+    fixture_path = tmp_path / 'http_fixture.jsonl'
+    monkeypatch.setenv('MGAP_HTTP_FIXTURE_RECORD_PATH', str(fixture_path))
+    monkeypatch.delenv('MGAP_HTTP_FIXTURE_REPLAY_PATH', raising=False)
+    monkeypatch.setattr('mygooglealertpapers.enrich.http_client._REPLAY_CACHE', None)
+    monkeypatch.setattr('mygooglealertpapers.enrich.http_client._REPLAY_CACHE_PATH', None)
+    monkeypatch.setattr(
+        'mygooglealertpapers.enrich.http_client._open',
+        lambda request, *, timeout, opener=None: _FakeResponse('{"ok": true, "source": "live"}', status=200),
+    )
+
+    live = request_json('crossref', 'https://api.crossref.org/works/test-record')
+    assert live.ok is True
+    lines = fixture_path.read_text(encoding='utf-8').splitlines()
+    assert len(lines) == 1
+    payload = json.loads(lines[0])
+    assert payload['provider'] == 'crossref'
+    assert payload['url'] == 'https://api.crossref.org/works/test-record'
+
+    monkeypatch.delenv('MGAP_HTTP_FIXTURE_RECORD_PATH', raising=False)
+    monkeypatch.setenv('MGAP_HTTP_FIXTURE_REPLAY_PATH', str(fixture_path))
+    monkeypatch.setattr('mygooglealertpapers.enrich.http_client._REPLAY_CACHE', None)
+    monkeypatch.setattr('mygooglealertpapers.enrich.http_client._REPLAY_CACHE_PATH', None)
+    monkeypatch.setattr(
+        'mygooglealertpapers.enrich.http_client._open',
+        lambda request, *, timeout, opener=None: (_ for _ in ()).throw(AssertionError('network should not be called during replay')),
+    )
+
+    replay = request_json('crossref', 'https://api.crossref.org/works/test-record')
+    assert replay.ok is True
+    assert replay.json_data == {'ok': True, 'source': 'live'}

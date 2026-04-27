@@ -41,6 +41,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--workspace", default=None, help="Project root, auto-detected when omitted")
     parser.add_argument("--reuse-source-records-from", type=str, default=None, help="Path to a DB whose source_record/candidate_enrichment_status/query_cache tables will be copied into output-db before running stages. Skips enrich stage automatically. Enables stable merge-only profile comparison without re-running enrich.")
     parser.add_argument("--stage-timeout-seconds", type=int, default=0, help="Wall-clock timeout for each mgap stage; 0 disables timeout")
+    parser.add_argument("--http-fixture-record", type=str, default=None, help="Record provider HTTP responses to a JSONL fixture during enrich")
+    parser.add_argument("--http-fixture-replay", type=str, default=None, help="Replay provider HTTP responses from a JSONL fixture during enrich")
     return parser.parse_args()
 
 
@@ -112,6 +114,21 @@ def provider_summary(conn: sqlite3.Connection) -> list[dict[str, object]]:
     ]
 
 
+def enrich_dispatch_summary(conn: sqlite3.Connection) -> dict[str, object] | None:
+    row = conn.execute(
+        "SELECT notes FROM batch_run WHERE stage = 'enrich_candidates' ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    if not row or not row[0]:
+        return None
+    try:
+        payload = json.loads(row[0])
+    except Exception:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    return payload
+
+
 def severe_doi_conflict_count(conn: sqlite3.Connection) -> int:
     rows = conn.execute("SELECT conflict_flags_json FROM merged_metadata_proposal").fetchall()
     count = 0
@@ -147,11 +164,19 @@ def normalized_only_fallback_count(conn: sqlite3.Connection) -> int:
     return count
 
 
-def run_mgap(project_root: Path, python_bin: str, sqlite_path: Path, policy_profile: Path, command: str, limit: int, timeout_seconds: int = 0) -> None:
+def run_mgap(project_root: Path, python_bin: str, sqlite_path: Path, policy_profile: Path, command: str, limit: int, timeout_seconds: int = 0, http_fixture_record: Path | None = None, http_fixture_replay: Path | None = None) -> None:
     env = dict(**__import__("os").environ)
     env["SQLITE_PATH"] = str(sqlite_path)
     env["MGAP_POLICY_PROFILE"] = str(policy_profile)
     env["PYTHONPATH"] = str(project_root / 'src')
+    if http_fixture_record:
+        env["MGAP_HTTP_FIXTURE_RECORD_PATH"] = str(http_fixture_record)
+    else:
+        env.pop("MGAP_HTTP_FIXTURE_RECORD_PATH", None)
+    if http_fixture_replay:
+        env["MGAP_HTTP_FIXTURE_REPLAY_PATH"] = str(http_fixture_replay)
+    else:
+        env.pop("MGAP_HTTP_FIXTURE_REPLAY_PATH", None)
     cmd = [python_bin, "-m", "mygooglealertpapers.cli", command, "--limit", str(limit)]
     subprocess.run(cmd, cwd=project_root, env=env, check=True, timeout=timeout_seconds or None)
 
@@ -163,6 +188,7 @@ def render_markdown(summary: dict[str, object]) -> str:
             f"- {row['provider']}: events={row['events']}, total_latency_ms={row['total_latency_ms']}, estimated_cost_usd={row['estimated_cost_usd']:.6f}"
         )
     llm = summary.get("paid_llm_usage") or {}
+    dispatch = summary.get("enrich_dispatch_summary") or {}
     if summary.get("status") == "failed":
         return "\n".join(
             [
@@ -172,6 +198,8 @@ def render_markdown(summary: dict[str, object]) -> str:
                 f"- source_db: `{summary['source_db']}`",
                 f"- output_db: `{summary['output_db']}`",
                 f"- policy_profile: `{summary['policy_profile']}`",
+                f"- http_fixture_record: `{summary.get('http_fixture_record')}`",
+                f"- http_fixture_replay: `{summary.get('http_fixture_replay')}`",
                 f"- stages: `{', '.join(summary['stages'])}`",
                 "",
                 "## Failure",
@@ -195,6 +223,10 @@ def render_markdown(summary: dict[str, object]) -> str:
                 f"- total_provider_latency_ms: `{summary['total_provider_latency_ms']}`",
                 f"- paid_llm_usage_present: `{llm.get('present', False)}`",
                 f"- paid_llm_note: `{llm.get('note', 'n/a')}`",
+                f"- dispatch_request_count: `{dispatch.get('dispatch_request_count', 'n/a')}`",
+                f"- request_savings_vs_runnable_intents: `{dispatch.get('request_savings_vs_runnable_intents', 'n/a')}`",
+                f"- shared_title_reuse_group_count: `{dispatch.get('shared_title_reuse_group_count', 'n/a')}`",
+                f"- shared_title_reuse_request_savings: `{dispatch.get('shared_title_reuse_request_savings', 'n/a')}`",
                 "",
                 "## Provider summary",
                 *provider_lines,
@@ -208,6 +240,8 @@ def render_markdown(summary: dict[str, object]) -> str:
             f"- source_db: `{summary['source_db']}`",
             f"- output_db: `{summary['output_db']}`",
             f"- policy_profile: `{summary['policy_profile']}`",
+            f"- http_fixture_record: `{summary.get('http_fixture_record')}`",
+            f"- http_fixture_replay: `{summary.get('http_fixture_replay')}`",
             f"- stages: `{', '.join(summary['stages'])}`",
             "",
             "## Candidate and normalization summary",
@@ -235,6 +269,10 @@ def render_markdown(summary: dict[str, object]) -> str:
             f"- batch_run_count: `{summary['batch_run_count']}`",
             f"- paid_llm_usage_present: `{llm.get('present', False)}`",
             f"- paid_llm_note: `{llm.get('note', 'n/a')}`",
+            f"- dispatch_request_count: `{dispatch.get('dispatch_request_count', 'n/a')}`",
+            f"- request_savings_vs_runnable_intents: `{dispatch.get('request_savings_vs_runnable_intents', 'n/a')}`",
+            f"- shared_title_reuse_group_count: `{dispatch.get('shared_title_reuse_group_count', 'n/a')}`",
+            f"- shared_title_reuse_request_savings: `{dispatch.get('shared_title_reuse_request_savings', 'n/a')}`",
             "",
             "## Provider summary",
             *provider_lines,
@@ -290,7 +328,17 @@ def main() -> None:
             run_mgap(project_root, args.python, output_db, policy_profile, "normalize-candidates", args.limit, args.stage_timeout_seconds)
         if "enrich" in stages_to_run:
             failed_stage = "enrich"
-            run_mgap(project_root, args.python, output_db, policy_profile, "enrich-candidates", args.limit, args.stage_timeout_seconds)
+            run_mgap(
+                project_root,
+                args.python,
+                output_db,
+                policy_profile,
+                "enrich-candidates",
+                args.limit,
+                args.stage_timeout_seconds,
+                http_fixture_record=Path(args.http_fixture_record).resolve() if args.http_fixture_record else None,
+                http_fixture_replay=Path(args.http_fixture_replay).resolve() if args.http_fixture_replay else None,
+            )
         if "merge" in stages_to_run:
             failed_stage = "merge"
             run_mgap(project_root, args.python, output_db, policy_profile, "merge-metadata", args.limit, args.stage_timeout_seconds)
@@ -315,6 +363,8 @@ def main() -> None:
             "output_db": str(output_db),
             "policy_profile": str(policy_profile),
             "policy_profile_name": policy_profile.stem,
+            "http_fixture_record": str(Path(args.http_fixture_record).resolve()) if args.http_fixture_record else None,
+            "http_fixture_replay": str(Path(args.http_fixture_replay).resolve()) if args.http_fixture_replay else None,
             "stages": args.stages,
             "source_candidate_count": source_candidate_count,
             "replay_candidate_count": replay_candidate_count,
@@ -335,6 +385,7 @@ def main() -> None:
             "total_batch_duration_ms": count_scalar(conn, "SELECT COALESCE(SUM(duration_ms),0) FROM batch_run"),
             "total_provider_latency_ms": count_scalar(conn, "SELECT COALESCE(SUM(latency_ms),0) FROM cost_event WHERE provider IS NOT NULL"),
             "provider_summary": provider_summary(conn),
+            "enrich_dispatch_summary": enrich_dispatch_summary(conn),
             "paid_llm_usage": {
                 "present": False,
                 "note": "No paid LLM call path was exercised in this replay run.",

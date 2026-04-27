@@ -15,29 +15,21 @@ def _extract_primary_location_fields(item: dict) -> tuple[str | None, str | None
     return venue, url
 
 
-def query_openalex(candidate_id: str, *, doi: str | None, title: str | None, first_author_family: str | None = None, venue_hint: str | None = None, query_year: str | None = None, email: str | None = None) -> EnrichmentRecord | None:
-    if doi:
-        url = f"https://api.openalex.org/works?filter=doi:{urllib.parse.quote('https://doi.org/' + doi)}&per-page=1"
-        query_type = 'doi'
-        query_string = doi
-    elif title:
-        url = f"https://api.openalex.org/works?search={urllib.parse.quote(title)}&per-page=1"
-        query_type = 'title'
-        query_string = title
-    else:
-        return None
-    if email:
-        url += f"&email={urllib.parse.quote(email)}"
-
-    response = request_json('openalex', url, contact_email=email)
-    if not response.ok:
-        return EnrichmentRecord(candidate_id, 'openalex', query_type, query_string, False, None, None, None, None, None, None, None, None, doi, None, None, None, json.dumps(response.to_error_payload(), ensure_ascii=False), response.latency_ms)
-
-    payload = response.json_data if isinstance(response.json_data, dict) else {}
-    results = payload.get('results', [])
-    if not results:
-        return EnrichmentRecord(candidate_id, 'openalex', query_type, query_string, False, None, None, None, None, None, None, None, None, doi, None, None, None, json.dumps(payload, ensure_ascii=False), response.latency_ms)
-    item = results[0]
+def build_openalex_record(
+    candidate_id: str,
+    *,
+    query_type: str,
+    query_string: str,
+    doi: str | None,
+    item: dict | None,
+    raw_payload_json: str,
+    latency_ms: int,
+    first_author_family: str | None = None,
+    venue_hint: str | None = None,
+    query_year: str | None = None,
+) -> EnrichmentRecord:
+    if not item:
+        return EnrichmentRecord(candidate_id, 'openalex', query_type, query_string, False, None, None, None, None, None, None, None, None, doi, None, None, None, raw_payload_json, latency_ms)
     authors = [a.get('author', {}).get('display_name') for a in item.get('authorships', []) if a.get('author', {}).get('display_name')]
     venue, url = _extract_primary_location_fields(item)
     ids = item.get('ids') or {}
@@ -45,8 +37,39 @@ def query_openalex(candidate_id: str, *, doi: str | None, title: str | None, fir
     matched_ok = True
     if query_type == 'title':
         matched_ok = accept_result(query_string, item.get('display_name'), query_year, str(item.get('publication_year')) if item.get('publication_year') else None, first_author_family, json.dumps(authors, ensure_ascii=False), venue_hint, venue, candidate_doi=doi, provider_doi=provider_doi, provider_name='openalex')
-    return EnrichmentRecord(candidate_id, 'openalex', query_type, query_string, matched_ok, 1.0 if doi else None, item.get('id'), item.get('display_name'), json.dumps(authors, ensure_ascii=False), item.get('abstract_inverted_index') and json.dumps(item.get('abstract_inverted_index')), venue, str(item.get('publication_year')) if item.get('publication_year') else None, item.get('type'), provider_doi, (ids.get('pmid') or '').replace('https://pubmed.ncbi.nlm.nih.gov/', '').strip('/') or None, (ids.get('pmcid') or '').replace('https://www.ncbi.nlm.nih.gov/pmc/articles/', '').strip('/') or None, url, json.dumps(item, ensure_ascii=False), response.latency_ms)
+    return EnrichmentRecord(candidate_id, 'openalex', query_type, query_string, matched_ok, 1.0 if query_type == 'doi' else None, item.get('id'), item.get('display_name'), json.dumps(authors, ensure_ascii=False), item.get('abstract_inverted_index') and json.dumps(item.get('abstract_inverted_index')), venue, str(item.get('publication_year')) if item.get('publication_year') else None, item.get('type'), provider_doi, (ids.get('pmid') or '').replace('https://pubmed.ncbi.nlm.nih.gov/', '').strip('/') or None, (ids.get('pmcid') or '').replace('https://www.ncbi.nlm.nih.gov/pmc/articles/', '').strip('/') or None, url, raw_payload_json, latency_ms)
 
+
+def fetch_openalex_title_item(title: str, *, email: str | None = None) -> tuple[dict | None, str, int]:
+    url = f"https://api.openalex.org/works?search={urllib.parse.quote(title)}&per-page=1"
+    if email:
+        url += f"&email={urllib.parse.quote(email)}"
+    response = request_json('openalex', url, contact_email=email)
+    if not response.ok:
+        return None, json.dumps(response.to_error_payload(), ensure_ascii=False), response.latency_ms
+    payload = response.json_data if isinstance(response.json_data, dict) else {}
+    results = payload.get('results', [])
+    item = results[0] if results else None
+    raw_payload_json = json.dumps(item if item else payload, ensure_ascii=False)
+    return item, raw_payload_json, response.latency_ms
+
+
+def query_openalex(candidate_id: str, *, doi: str | None, title: str | None, first_author_family: str | None = None, venue_hint: str | None = None, query_year: str | None = None, email: str | None = None) -> EnrichmentRecord | None:
+    if doi:
+        url = f"https://api.openalex.org/works?filter=doi:{urllib.parse.quote('https://doi.org/' + doi)}&per-page=1"
+        if email:
+            url += f"&email={urllib.parse.quote(email)}"
+        response = request_json('openalex', url, contact_email=email)
+        if not response.ok:
+            return EnrichmentRecord(candidate_id, 'openalex', 'doi', doi, False, None, None, None, None, None, None, None, None, doi, None, None, None, json.dumps(response.to_error_payload(), ensure_ascii=False), response.latency_ms)
+        payload = response.json_data if isinstance(response.json_data, dict) else {}
+        results = payload.get('results', [])
+        item = results[0] if results else None
+        return build_openalex_record(candidate_id, query_type='doi', query_string=doi, doi=doi, item=item, raw_payload_json=json.dumps(item if item else payload, ensure_ascii=False), latency_ms=response.latency_ms)
+    if title:
+        item, raw_payload_json, latency_ms = fetch_openalex_title_item(title, email=email)
+        return build_openalex_record(candidate_id, query_type='title', query_string=title, doi=doi, item=item, raw_payload_json=raw_payload_json, latency_ms=latency_ms, first_author_family=first_author_family, venue_hint=venue_hint, query_year=query_year)
+    return None
 
 
 def query_openalex_batch_by_doi(dois: list[str], *, email: str | None = None):
