@@ -17,22 +17,130 @@ from mygooglealertpapers.mail.scholar_detector import detect_google_scholar_aler
 logger = logging.getLogger(__name__)
 
 
-def _iter_input_records(input_path: Path) -> Iterable[dict[str, Any]]:
-    if input_path.suffix.lower() == '.jsonl':
-        for line_no, line in enumerate(input_path.read_text(encoding='utf-8').splitlines(), start=1):
-            stripped = line.strip()
+def resolve_import_input_path(input_path: Path) -> Path:
+    if input_path.suffix.lower() != '.jsonl':
+        return input_path
+    if input_path.stem.endswith('_reconciled'):
+        return input_path
+    reconciled = input_path.with_name(f'{input_path.stem}_reconciled{input_path.suffix}')
+    if reconciled.exists():
+        return reconciled
+    return input_path
+
+
+def _default_quarantine_path(input_path: Path) -> Path:
+    return input_path.parent / 'quarantine' / f'{input_path.stem}_invalid_lines.jsonl'
+
+
+def _iter_jsonl_lines(input_path: Path) -> Iterable[tuple[int, str]]:
+    with input_path.open('r', encoding='utf-8-sig') as handle:
+        for line_no, line in enumerate(handle, start=1):
+            yield line_no, line.rstrip('\n')
+
+
+def _load_json_payload(text: str, *, line_no: int | None = None) -> dict[str, Any]:
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError as exc:
+        if line_no is None:
+            raise ValueError(f'invalid JSON: {exc}') from exc
+        raise ValueError(f'invalid JSONL at line {line_no}: {exc}') from exc
+    if not isinstance(payload, dict):
+        if line_no is None:
+            raise ValueError('JSON object input must decode to an object')
+        raise ValueError(f'line {line_no} is not a JSON object')
+    return payload
+
+
+def validate_local_body_input(
+    input_path: Path,
+    *,
+    quarantine_path: Path | None = None,
+    fail_on_invalid_jsonl: bool = False,
+) -> dict[str, Any]:
+    resolved_input_path = resolve_import_input_path(input_path)
+    used_reconciled_input = resolved_input_path != input_path
+    canonical_reconciled_path = str(resolved_input_path) if used_reconciled_input else None
+    summary: dict[str, Any] = {
+        'requested_input_path': str(input_path),
+        'resolved_input_path': str(resolved_input_path),
+        'used_reconciled_input': used_reconciled_input,
+        'canonical_reconciled_path': canonical_reconciled_path,
+        'format': resolved_input_path.suffix.lower().lstrip('.'),
+        'total_lines': 0,
+        'blank_lines': 0,
+        'valid_records': 0,
+        'invalid_lines': 0,
+        'invalid_line_numbers': [],
+        'invalid_jsonl_path': None,
+    }
+
+    if resolved_input_path.suffix.lower() == '.jsonl':
+        invalid_entries: list[dict[str, Any]] = []
+        for line_no, raw_line in _iter_jsonl_lines(resolved_input_path):
+            summary['total_lines'] += 1
+            stripped = raw_line.strip()
+            if not stripped:
+                summary['blank_lines'] += 1
+                continue
+            try:
+                _load_json_payload(stripped, line_no=line_no)
+            except ValueError as exc:
+                summary['invalid_lines'] += 1
+                summary['invalid_line_numbers'].append(line_no)
+                invalid_entries.append(
+                    {
+                        'line_no': line_no,
+                        'error': str(exc),
+                        'raw_line': raw_line[:1000],
+                    }
+                )
+                if fail_on_invalid_jsonl:
+                    raise
+                continue
+            summary['valid_records'] += 1
+
+        if invalid_entries:
+            quarantine_output = quarantine_path or _default_quarantine_path(resolved_input_path)
+            quarantine_output.parent.mkdir(parents=True, exist_ok=True)
+            with quarantine_output.open('w', encoding='utf-8') as handle:
+                for entry in invalid_entries:
+                    handle.write(json.dumps(entry, ensure_ascii=False) + '\n')
+            summary['invalid_jsonl_path'] = str(quarantine_output)
+        return summary
+
+    raw_text = resolved_input_path.read_text(encoding='utf-8-sig')
+    payload = json.loads(raw_text)
+    if isinstance(payload, dict):
+        records = payload.get('records') if isinstance(payload.get('records'), list) else [payload]
+    elif isinstance(payload, list):
+        records = payload
+    else:
+        raise ValueError('unsupported input format, expected JSON object/list or JSONL object lines')
+    for item in records:
+        if not isinstance(item, dict):
+            raise ValueError('JSON array/object input must contain JSON objects only')
+    summary['valid_records'] = len(records)
+    return summary
+
+
+def _iter_input_records(input_path: Path, *, fail_on_invalid_jsonl: bool = False) -> Iterable[dict[str, Any]]:
+    resolved_input_path = resolve_import_input_path(input_path)
+    if resolved_input_path.suffix.lower() == '.jsonl':
+        for line_no, raw_line in _iter_jsonl_lines(resolved_input_path):
+            stripped = raw_line.strip()
             if not stripped:
                 continue
             try:
-                payload = json.loads(stripped)
-            except json.JSONDecodeError as exc:
-                raise ValueError(f'invalid JSONL at line {line_no}: {exc}') from exc
-            if not isinstance(payload, dict):
-                raise ValueError(f'line {line_no} is not a JSON object')
+                payload = _load_json_payload(stripped, line_no=line_no)
+            except ValueError:
+                if fail_on_invalid_jsonl:
+                    raise
+                continue
             yield payload
         return
 
-    payload = json.loads(input_path.read_text(encoding='utf-8'))
+    payload = json.loads(resolved_input_path.read_text(encoding='utf-8-sig'))
     if isinstance(payload, dict):
         records = payload.get('records')
         if isinstance(records, list):
@@ -41,7 +149,7 @@ def _iter_input_records(input_path: Path) -> Iterable[dict[str, Any]]:
                     raise ValueError('records array must contain JSON objects')
                 yield item
             return
-        yield payload
+        yield _load_json_payload(json.dumps(payload, ensure_ascii=False))
         return
     if isinstance(payload, list):
         for item in payload:
@@ -155,7 +263,9 @@ def import_local_body_snapshots(
     limit: int | None,
     mailbox: str,
     scan_mode: str,
-) -> dict[str, int]:
+    quarantine_path: Path | None = None,
+    fail_on_invalid_jsonl: bool = False,
+) -> dict[str, Any]:
     repo = Repository(settings.sqlite_path)
     tracker = CostTracker(repo, settings.sqlite_path)
     run_id = 'import_local_bodies_' + uuid.uuid4().hex[:12]
@@ -163,10 +273,14 @@ def import_local_body_snapshots(
     imported = 0
     skipped = 0
     no_body = 0
+    processed = 0
 
-    records = list(_iter_input_records(input_path))
-    if limit is not None:
-        records = records[:limit]
+    validation = validate_local_body_input(
+        input_path,
+        quarantine_path=quarantine_path,
+        fail_on_invalid_jsonl=fail_on_invalid_jsonl,
+    )
+    resolved_input_path = Path(validation['resolved_input_path'])
 
     with repo.connect() as conn:
         repo.start_batch_run(
@@ -174,9 +288,17 @@ def import_local_body_snapshots(
             run_id=run_id,
             stage='import_local_bodies',
             requested_limit=limit,
-            notes=f'input={input_path}',
+            notes=(
+                f'input={validation["requested_input_path"]}; '
+                f'resolved={validation["resolved_input_path"]}; '
+                f'invalid_lines={validation["invalid_lines"]}'
+            ),
         )
-        for record in records:
+        for record in _iter_input_records(resolved_input_path, fail_on_invalid_jsonl=fail_on_invalid_jsonl):
+            if limit is not None and processed >= limit:
+                break
+            processed += 1
+
             subject = _coerce_text(record.get('subject'))
             from_address = _coerce_text(record.get('from_address') or record.get('sender'))
             message_id = _coerce_text(record.get('message_id'))
@@ -230,22 +352,36 @@ def import_local_body_snapshots(
             conn,
             run_id=run_id,
             duration_ms=int((time.perf_counter() - started_at) * 1000),
-            processed_count=len(records),
+            processed_count=processed,
             status='ok',
-            notes=f'imported={imported}; skipped={skipped}; no_body={no_body}',
+            notes=(
+                f'imported={imported}; skipped={skipped}; no_body={no_body}; '
+                f'invalid_lines={validation["invalid_lines"]}; '
+                f'quarantine={validation["invalid_jsonl_path"]}'
+            ),
         )
         conn.commit()
 
     logger.info(
-        'Local body import finished: input=%s processed=%s imported=%s skipped=%s no_body=%s',
-        input_path,
-        len(records),
+        'Local body import finished: requested=%s resolved=%s processed=%s imported=%s skipped=%s no_body=%s invalid_lines=%s',
+        validation['requested_input_path'],
+        validation['resolved_input_path'],
+        processed,
         imported,
         skipped,
         no_body,
+        validation['invalid_lines'],
     )
     return {
-        'processed': len(records),
+        'requested_input_path': validation['requested_input_path'],
+        'resolved_input_path': validation['resolved_input_path'],
+        'used_reconciled_input': validation['used_reconciled_input'],
+        'canonical_reconciled_path': validation['canonical_reconciled_path'],
+        'processed': processed,
+        'valid_records': validation['valid_records'],
+        'invalid_lines': validation['invalid_lines'],
+        'invalid_line_numbers': validation['invalid_line_numbers'],
+        'invalid_jsonl_path': validation['invalid_jsonl_path'],
         'imported': imported,
         'skipped': skipped,
         'no_body': no_body,

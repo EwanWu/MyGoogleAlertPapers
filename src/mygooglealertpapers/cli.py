@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import argparse
 
+from mygooglealertpapers.benchmark_baseline import build_baseline_manifest, run_baseline_manifest
 from mygooglealertpapers.config import load_settings
 from mygooglealertpapers.db.schema import create_schema_at_default_path
 from mygooglealertpapers.logging_utils import configure_logging
 from mygooglealertpapers.pipeline.ingest import parse_and_extract_candidates, scan_and_store_messages
-from mygooglealertpapers.pipeline.local_import import import_local_body_snapshots
+from mygooglealertpapers.pipeline.local_import import import_local_body_snapshots, validate_local_body_input
 from mygooglealertpapers.pipeline.normalize import normalize_candidates
 from mygooglealertpapers.pipeline.enrich import enrich_candidates
 from mygooglealertpapers.pipeline.enrich_stats import build_enrichment_stats
@@ -41,6 +42,20 @@ def build_parser() -> argparse.ArgumentParser:
     import_local_parser.add_argument("--limit", type=int, default=None)
     import_local_parser.add_argument("--mailbox", type=str, default="LOCAL_163")
     import_local_parser.add_argument("--scan-mode", type=str, default="local_json_import")
+    import_local_parser.add_argument("--quarantine-output", type=str, default=None)
+    import_local_parser.add_argument("--strict-jsonl", action="store_true")
+
+    validate_local_parser = subparsers.add_parser("validate-local-bodies", help="Validate local body JSONL/JSON import artifacts before import")
+    validate_local_parser.add_argument("--input", type=str, required=True)
+    validate_local_parser.add_argument("--quarantine-output", type=str, default=None)
+    validate_local_parser.add_argument("--strict-jsonl", action="store_true")
+
+    benchmark_parser = subparsers.add_parser("benchmark-baseline", help="Show or run the standardized Day 2 benchmark/replay baseline presets")
+    benchmark_parser.add_argument("--preset", choices=["small-fixed", "large-fixed", "fresh-like"], required=True)
+    benchmark_parser.add_argument("--run-tag", type=str, default="baseline")
+    benchmark_parser.add_argument("--python", type=str, default="python3")
+    benchmark_parser.add_argument("--stage-timeout-seconds", type=int, default=0)
+    benchmark_parser.add_argument("--execute", action="store_true")
 
     normalize_parser = subparsers.add_parser("normalize-candidates", help="Normalize extracted candidates")
     normalize_parser.add_argument("--limit", type=int, default=100)
@@ -87,14 +102,38 @@ def main() -> None:
         input_path = Path(args.input)
         if not input_path.is_absolute():
             input_path = settings.workspace_root / input_path
+        quarantine_output = Path(args.quarantine_output) if args.quarantine_output else None
+        if quarantine_output is not None and not quarantine_output.is_absolute():
+            quarantine_output = settings.workspace_root / quarantine_output
         result = import_local_body_snapshots(
             settings,
             input_path=input_path,
             limit=args.limit,
             mailbox=args.mailbox,
             scan_mode=args.scan_mode,
+            quarantine_path=quarantine_output,
+            fail_on_invalid_jsonl=args.strict_jsonl,
         )
         print(result)
+    elif args.command == "validate-local-bodies":
+        input_path = Path(args.input)
+        if not input_path.is_absolute():
+            input_path = settings.workspace_root / input_path
+        quarantine_output = Path(args.quarantine_output) if args.quarantine_output else None
+        if quarantine_output is not None and not quarantine_output.is_absolute():
+            quarantine_output = settings.workspace_root / quarantine_output
+        print(validate_local_body_input(input_path, quarantine_path=quarantine_output, fail_on_invalid_jsonl=args.strict_jsonl))
+    elif args.command == "benchmark-baseline":
+        manifest = build_baseline_manifest(
+            settings.workspace_root,
+            preset_name=args.preset,
+            run_tag=args.run_tag,
+            python_bin=args.python,
+            stage_timeout_seconds=args.stage_timeout_seconds,
+        )
+        if args.execute:
+            run_baseline_manifest(manifest, cwd=settings.workspace_root)
+        print(manifest)
     elif args.command == "normalize-candidates":
         normalize_candidates(settings, limit=args.limit)
     elif args.command == "report-batch":

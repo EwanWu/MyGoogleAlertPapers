@@ -70,8 +70,16 @@ def test_local_import_rerun_is_idempotent(tmp_path: Path):
     first = import_local_body_snapshots(settings, input_path=input_path, limit=None, mailbox='INBOX', scan_mode='local_test')
     second = import_local_body_snapshots(settings, input_path=input_path, limit=None, mailbox='INBOX', scan_mode='local_test')
 
-    assert first == {'processed': 1, 'imported': 1, 'skipped': 0, 'no_body': 0}
-    assert second == {'processed': 1, 'imported': 0, 'skipped': 1, 'no_body': 0}
+    assert first['processed'] == 1
+    assert first['imported'] == 1
+    assert first['skipped'] == 0
+    assert first['no_body'] == 0
+    assert first['invalid_lines'] == 0
+    assert second['processed'] == 1
+    assert second['imported'] == 0
+    assert second['skipped'] == 1
+    assert second['no_body'] == 0
+    assert second['invalid_lines'] == 0
 
     with sqlite3.connect(db_path) as conn:
         assert conn.execute('SELECT COUNT(*) FROM mail_ingestion_record').fetchone()[0] == 1
