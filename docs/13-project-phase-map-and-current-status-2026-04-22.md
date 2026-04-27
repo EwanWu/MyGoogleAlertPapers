@@ -37,6 +37,19 @@ Runtime defaults now additionally assume:
 - OpenAlex DOI batching
 - title payload reuse enabled by default for `crossref` / `openalex` / `semanticscholar`
 
+## Recent hardening phase now absorbed into the mainline view
+
+The 2026-04-26 -> 2026-04-27 Day 2 / Day 3 execution window should be read as a completed **development phase**, not as a separate long-lived document layer.
+
+What that phase added to the current project state:
+- safer local `163` JSONL intake with explicit validation / corrupt-line handling / reconciled-artifact preference
+- reproducible benchmark/replay baseline entrypoints
+- minimal shared provider HTTP runtime for key providers
+- enrichment-plan reporting for dedup / batching opportunity measurement
+- safe dispatch dedup and context-aware cache semantics in enrich execution
+- deterministic recorded-payload replay as the standard judge for narrow runtime-optimization promotion
+- default-enabled narrow-scope title payload reuse after semantic replay confirmation
+
 ## Stable project decisions
 
 ### 1. Bibliographic baseline stays on `conditional_sources_v2`
@@ -66,17 +79,35 @@ Using reused source records to eliminate live-provider variability:
 Canonical integrated validation artifact:
 - `docs/validation/mainline-summary-20260422_mainline.md`
 
+## Canonical runtime-promotion evidence added in this phase
+
+The current runtime-default additions are justified by a smaller but decision-grade evidence set:
+- `docs/validation/day2-benchmark-baseline-20260426.md`
+- `docs/validation/day3-enrichment-plan-snapshot-slice150-20260427.md`
+- `docs/validation/day3-crosscheck-merge-dedup-20260427.md`
+- `docs/validation/day3-crosscheck-enrich-smoke12-20260427.md`
+- `docs/validation/day3-dispatch-report-smoke12-20260427.md`
+- `docs/validation/recorded_deterministic_ab_medium60_20260427.md`
+
+What these established:
+- Day 2 operator-boundary hardening is in place and regression-tested
+- Day 3 dispatch/cache/runtime changes did not break the validated merge/dedup path
+- narrow-scope title payload reuse was promoted only after deterministic recorded-payload replay showed zero candidate-level semantic drift on the medium60 comparison
+
 ## Active document set to read now
 
-1. `docs/16-day2-day3-hardening-and-title-reuse-promotion-2026-04-27.md`
-2. `docs/13-project-phase-map-and-current-status-2026-04-22.md`
-3. `docs/14-mainline-promotion-memo-2026-04-22.md`
-4. `docs/11-packageB-decision-memo-2026-04-16.md`
-5. `docs/12-packageB-phase-summary-and-archive-guide-2026-04-16.md`
-6. `docs/09-packageA-implementation-and-replay-results-2026-04-15.md`
-7. `docs/validation/trackA-author-blob-fb-decision-20260421c.md`
-8. `docs/validation/trackB-unpaywall-decision-memo-20260422.md`
-9. `docs/validation/mainline-summary-20260422_mainline.md`
+1. `docs/13-project-phase-map-and-current-status-2026-04-22.md`
+2. `docs/14-mainline-promotion-memo-2026-04-22.md`
+3. `docs/11-packageB-decision-memo-2026-04-16.md`
+4. `docs/12-packageB-phase-summary-and-archive-guide-2026-04-16.md`
+5. `docs/09-packageA-implementation-and-replay-results-2026-04-15.md`
+6. `docs/validation/recorded_deterministic_ab_medium60_20260427.md`
+7. `docs/validation/day3-enrichment-plan-snapshot-slice150-20260427.md`
+8. `docs/validation/day3-crosscheck-merge-dedup-20260427.md`
+9. `docs/validation/day3-dispatch-report-smoke12-20260427.md`
+10. `docs/validation/trackA-author-blob-fb-decision-20260421c.md`
+11. `docs/validation/trackB-unpaywall-decision-memo-20260422.md`
+12. `docs/validation/mainline-summary-20260422_mainline.md`
 
 ## What is still open
 
@@ -86,6 +117,15 @@ The next useful validation is:
 - preserve the current promoted mainline/runtime defaults
 - run them on a genuinely fresh slice or a larger fixed slice
 - prioritize higher-yield request-reduction opportunities that can still be judged by fixed-seed replay
+
+## Immediate next-step direction
+
+The most promising next phase is no longer broad policy exploration. It is **higher-yield request scheduling with replay-checked semantics**.
+
+Recommended order:
+1. push the largest remaining batching opportunity first, especially OpenAlex DOI batching from plan-level recommendation toward broader production use
+2. keep every new scheduling optimization behind fixed-seed replay and, when needed, recorded-payload replay
+3. avoid changing match standards unless a new correctness problem appears
 
 ## What should not be reopened casually
 

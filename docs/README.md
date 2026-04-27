@@ -8,24 +8,20 @@ Read these first when you want the current project state, current default flow, 
 
 ### Project-wide entry order
 
-1. `docs/16-day2-day3-hardening-and-title-reuse-promotion-2026-04-27.md`
-2. `docs/13-project-phase-map-and-current-status-2026-04-22.md`
-3. `docs/14-mainline-promotion-memo-2026-04-22.md`
-4. `docs/15-three-day-execution-plan-2026-04-26.md` — now mainly historical as the execution-plan source for the completed 2026-04-27 hardening window
-5. `docs/11-packageB-decision-memo-2026-04-16.md`
-6. `docs/12-packageB-phase-summary-and-archive-guide-2026-04-16.md`
-7. `docs/09-packageA-implementation-and-replay-results-2026-04-15.md`
-8. `docs/validation/recorded_deterministic_ab_medium60_20260427.md`
-9. `docs/validation/trackA-author-blob-fb-decision-20260421c.md`
-10. `docs/validation/trackB-unpaywall-decision-memo-20260422.md` — ✅ **COMPLETED 2026-04-22**
-11. `docs/validation/mainline-summary-20260422_mainline.md`
+1. `docs/13-project-phase-map-and-current-status-2026-04-22.md`
+2. `docs/14-mainline-promotion-memo-2026-04-22.md`
+3. `docs/11-packageB-decision-memo-2026-04-16.md`
+4. `docs/12-packageB-phase-summary-and-archive-guide-2026-04-16.md`
+5. `docs/09-packageA-implementation-and-replay-results-2026-04-15.md`
+6. `docs/validation/recorded_deterministic_ab_medium60_20260427.md`
+7. `docs/validation/trackA-author-blob-fb-decision-20260421c.md`
+8. `docs/validation/trackB-unpaywall-decision-memo-20260422.md` — ✅ **COMPLETED 2026-04-22**
+9. `docs/validation/mainline-summary-20260422_mainline.md`
 
 ### Current active decision layer
 
-- `docs/16-day2-day3-hardening-and-title-reuse-promotion-2026-04-27.md`
 - `docs/13-project-phase-map-and-current-status-2026-04-22.md`
 - `docs/14-mainline-promotion-memo-2026-04-22.md`
-- `docs/15-three-day-execution-plan-2026-04-26.md`
 - `docs/11-packageB-decision-memo-2026-04-16.md`
 - `docs/12-packageB-phase-summary-and-archive-guide-2026-04-16.md`
 - `docs/validation/trackA-author-blob-fb-decision-20260421c.md`
