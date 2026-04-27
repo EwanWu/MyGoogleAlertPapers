@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import time
@@ -234,6 +235,23 @@ def _dispatch_signature(intent: ProviderIntent) -> tuple[object, ...]:
     )
 
 
+def _cache_field_set_hash(intent: ProviderIntent) -> str:
+    if intent.query_type in IDENTIFIER_QUERY_TYPES:
+        return 'default'
+    payload = {
+        'query_type': intent.query_type,
+        'norm_title': intent.norm_title or '',
+        'doi': intent.doi or '',
+        'pmid': intent.pmid or '',
+        'arxiv_id': intent.arxiv_id or '',
+        'first_author_family': intent.first_author_family or '',
+        'venue_guess': intent.venue_guess or '',
+        'year_guess': intent.year_guess or '',
+    }
+    digest = hashlib.sha1(json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode('utf-8')).hexdigest()
+    return f'ctx_{digest[:16]}'
+
+
 def _build_dispatch_groups(runnable_intents: list[ProviderIntent]) -> list[DispatchGroup]:
     grouped: dict[tuple[str, str, str], list[ProviderIntent]] = {}
     ordered_keys: list[tuple[str, str, str]] = []
@@ -304,6 +322,10 @@ def _fanout_error_to_group(repo: Repository, tracker: CostTracker, conn, group: 
         repo.finish_enrichment_status(conn, candidate_id=intent.candidate_id, provider=intent.provider, status='error', latency_ms=0, error_summary=error_summary, notes=notes)
         tracker.record_stage_cost(conn, stage='enrich_candidates', status='error', candidate_id=intent.candidate_id, provider=intent.provider, latency_ms=0, notes=notes or error_summary)
     return len(group.intents)
+
+
+def _group_field_set_hash(group: DispatchGroup) -> str:
+    return _cache_field_set_hash(group.representative)
 
 
 def _execute_provider_query(settings: Settings, intent: ProviderIntent):
@@ -416,7 +438,7 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
                         raw_payload_json=json.dumps(item, ensure_ascii=False),
                         latency_ms=0,
                     )
-                    repo.put_query_cache(conn, provider='openalex', query_type='doi', query_key=doi_val, response_json=enrichment_record_to_json(rec), **cache_metadata_from_record(rec))
+                    repo.put_query_cache(conn, provider='openalex', query_type='doi', query_key=doi_val, response_json=enrichment_record_to_json(rec), **cache_metadata_from_record(rec, field_set_hash=_group_field_set_hash(group)))
                     processed_intents += _fanout_result_to_group(repo, tracker, conn, group, rec, cache_hit=False, notes='doi_batch')
                     handled_group_keys.add((group.provider, group.query_type, group.query_key))
 
@@ -446,7 +468,7 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
                         raw_payload_json=json.dumps({'doi': doi_val, 'status': 'no_match', 'provider': 'openalex'}, ensure_ascii=False),
                         latency_ms=0,
                     )
-                    repo.put_query_cache(conn, provider='openalex', query_type='doi', query_key=doi_val, response_json=enrichment_record_to_json(rec), **cache_metadata_from_record(rec))
+                    repo.put_query_cache(conn, provider='openalex', query_type='doi', query_key=doi_val, response_json=enrichment_record_to_json(rec), **cache_metadata_from_record(rec, field_set_hash=_group_field_set_hash(group)))
                     processed_intents += _fanout_result_to_group(repo, tracker, conn, group, rec, cache_hit=False, notes='doi_batch_no_match')
                     handled_group_keys.add((group.provider, group.query_type, group.query_key))
                 conn.commit()
@@ -466,7 +488,8 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
                 len(group.intents),
             )
             _start_group_statuses(repo, conn, group)
-            cached = repo.get_query_cache(conn, provider=group.provider, query_type=group.query_type, query_key=group.query_key)
+            field_set_hash = _group_field_set_hash(group)
+            cached = repo.get_query_cache(conn, provider=group.provider, query_type=group.query_type, query_key=group.query_key, field_set_hash=field_set_hash)
             if cached:
                 cached_rec = enrichment_record_from_json(cached[0])
                 if cache_status_from_record(cached_rec) != 'transient_error':
@@ -502,7 +525,7 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
                     raw_payload_json=json.dumps({'status': 'error', 'provider': group.provider, 'error': str(exc)}, ensure_ascii=False),
                     latency_ms=0,
                 )
-                repo.put_query_cache(conn, provider=group.provider, query_type=group.query_type, query_key=group.query_key, response_json=enrichment_record_to_json(rec), **cache_metadata_from_record(rec))
+                repo.put_query_cache(conn, provider=group.provider, query_type=group.query_type, query_key=group.query_key, response_json=enrichment_record_to_json(rec), **cache_metadata_from_record(rec, field_set_hash=field_set_hash))
                 processed_intents += _fanout_error_to_group(repo, tracker, conn, group, error_summary=str(exc))
                 if processed_intents % PROGRESS_EVERY == 0:
                     logger.info('Enrich progress: processed %s / %s runnable intent(s)', processed_intents, len(runnable_intents))
@@ -532,14 +555,14 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
                     raw_payload_json=json.dumps({'status': 'no_match', 'provider': group.provider, 'query_key': group.query_key}, ensure_ascii=False),
                     latency_ms=0,
                 )
-                repo.put_query_cache(conn, provider=group.provider, query_type=group.query_type, query_key=group.query_key, response_json=enrichment_record_to_json(rec), **cache_metadata_from_record(rec))
+                repo.put_query_cache(conn, provider=group.provider, query_type=group.query_type, query_key=group.query_key, response_json=enrichment_record_to_json(rec), **cache_metadata_from_record(rec, field_set_hash=field_set_hash))
                 processed_intents += _fanout_result_to_group(repo, tracker, conn, group, rec, cache_hit=False, notes='no_record_returned')
                 if processed_intents % PROGRESS_EVERY == 0:
                     logger.info('Enrich progress: processed %s / %s runnable intent(s)', processed_intents, len(runnable_intents))
                     conn.commit()
                 continue
 
-            repo.put_query_cache(conn, provider=group.provider, query_type=group.query_type, query_key=group.query_key, response_json=enrichment_record_to_json(rec), **cache_metadata_from_record(rec))
+            repo.put_query_cache(conn, provider=group.provider, query_type=group.query_type, query_key=group.query_key, response_json=enrichment_record_to_json(rec), **cache_metadata_from_record(rec, field_set_hash=field_set_hash))
             processed_intents += _fanout_result_to_group(repo, tracker, conn, group, rec, cache_hit=False)
             if processed_intents % PROGRESS_EVERY == 0:
                 logger.info('Enrich progress: processed %s / %s runnable intent(s)', processed_intents, len(runnable_intents))

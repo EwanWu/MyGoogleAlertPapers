@@ -207,7 +207,7 @@ def test_enrich_candidates_dispatch_dedups_identical_title_queries(tmp_path: Pat
         assert total_latency == 42
 
 
-def test_enrich_candidates_falls_back_to_cache_reuse_for_mismatched_title_context(tmp_path: Path, monkeypatch):
+def test_enrich_candidates_uses_context_aware_cache_keys_for_mismatched_title_context(tmp_path: Path, monkeypatch):
     db_path = tmp_path / 'mgap.db'
     create_schema_at_default_path(db_path)
     settings = _make_settings(db_path)
@@ -256,7 +256,7 @@ def test_enrich_candidates_falls_back_to_cache_reuse_for_mismatched_title_contex
 
     enrich_candidates(settings, limit=10)
 
-    assert calls['count'] == 1
+    assert calls['count'] == 2
     with sqlite3.connect(db_path) as conn:
         statuses = conn.execute(
             '''
@@ -268,5 +268,14 @@ def test_enrich_candidates_falls_back_to_cache_reuse_for_mismatched_title_contex
         ).fetchall()
         assert statuses == [
             ('cand_ctx1', 'ok', 0, 42),
-            ('cand_ctx2', 'ok', 1, 0),
+            ('cand_ctx2', 'ok', 0, 42),
         ]
+        cache_key_count = conn.execute(
+            '''
+            SELECT COUNT(DISTINCT field_set_hash)
+            FROM query_cache
+            WHERE provider = ? AND query_type = ? AND query_key = ?
+            ''',
+            ('crossref', 'title', 'Shared But Context-Sensitive Title'),
+        ).fetchone()[0]
+        assert cache_key_count == 2
