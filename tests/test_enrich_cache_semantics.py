@@ -125,3 +125,148 @@ def test_enrich_candidates_retries_after_transient_provider_error(tmp_path: Path
             ('cand_retry', 'crossref'),
         ).fetchone()[0]
         assert source_count == 1
+
+
+def test_enrich_candidates_dispatch_dedups_identical_title_queries(tmp_path: Path, monkeypatch):
+    db_path = tmp_path / 'mgap.db'
+    create_schema_at_default_path(db_path)
+    settings = _make_settings(db_path)
+
+    with sqlite3.connect(db_path) as conn:
+        conn.executemany(
+            '''
+            INSERT INTO paper_candidate_normalized (
+                candidate_id, norm_title, norm_title_key, first_author_family, venue_guess, year_guess
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            ''',
+            [
+                ('cand_dup1', 'Duplicate Title Paper', 'duplicate title paper', 'Wu', 'Nature', '2026'),
+                ('cand_dup2', 'Duplicate Title Paper', 'duplicate title paper', 'Wu', 'Nature', '2026'),
+            ],
+        )
+        conn.commit()
+
+    calls = {'count': 0}
+
+    def fake_query_crossref(candidate_id: str, **kwargs):
+        calls['count'] += 1
+        return EnrichmentRecord(
+            candidate_id=candidate_id,
+            source_name='crossref',
+            query_type='title',
+            query_string='Duplicate Title Paper',
+            matched=True,
+            match_score=0.99,
+            external_id='crossref:dup',
+            title='Duplicate Title Paper',
+            authors_json=json.dumps(['Yue Wu'], ensure_ascii=False),
+            abstract=None,
+            venue='Nature',
+            year='2026',
+            publication_type='journal-article',
+            doi='10.1000/dup',
+            pmid=None,
+            pmcid=None,
+            url='https://doi.org/10.1000/dup',
+            raw_payload_json=json.dumps({'status': 'ok', 'doi': '10.1000/dup'}, ensure_ascii=False),
+            latency_ms=42,
+        )
+
+    monkeypatch.setattr('mygooglealertpapers.pipeline.enrich.query_crossref', fake_query_crossref)
+
+    enrich_candidates(settings, limit=10)
+
+    assert calls['count'] == 1
+    with sqlite3.connect(db_path) as conn:
+        statuses = conn.execute(
+            '''
+            SELECT candidate_id, status, cache_hit, latency_ms
+            FROM candidate_enrichment_status
+            WHERE provider = 'crossref'
+            ORDER BY candidate_id
+            '''
+        ).fetchall()
+        assert statuses == [
+            ('cand_dup1', 'ok', 0, 42),
+            ('cand_dup2', 'ok', 0, 0),
+        ]
+        source_count = conn.execute(
+            'SELECT COUNT(*) FROM source_record WHERE source_name = ?',
+            ('crossref',),
+        ).fetchone()[0]
+        assert source_count == 2
+        cache_row = conn.execute(
+            'SELECT cache_status FROM query_cache WHERE provider = ? AND query_type = ? AND query_key = ?',
+            ('crossref', 'title', 'Duplicate Title Paper'),
+        ).fetchone()
+        assert cache_row == ('positive_match',)
+        total_latency = conn.execute(
+            'SELECT COALESCE(SUM(latency_ms), 0) FROM cost_event WHERE provider = ?',
+            ('crossref',),
+        ).fetchone()[0]
+        assert total_latency == 42
+
+
+def test_enrich_candidates_falls_back_to_cache_reuse_for_mismatched_title_context(tmp_path: Path, monkeypatch):
+    db_path = tmp_path / 'mgap.db'
+    create_schema_at_default_path(db_path)
+    settings = _make_settings(db_path)
+
+    with sqlite3.connect(db_path) as conn:
+        conn.executemany(
+            '''
+            INSERT INTO paper_candidate_normalized (
+                candidate_id, norm_title, norm_title_key, first_author_family, venue_guess, year_guess
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            ''',
+            [
+                ('cand_ctx1', 'Shared But Context-Sensitive Title', 'shared but context-sensitive title', 'Wu', 'Nature', '2026'),
+                ('cand_ctx2', 'Shared But Context-Sensitive Title', 'shared but context-sensitive title', 'Li', 'Nature', '2025'),
+            ],
+        )
+        conn.commit()
+
+    calls = {'count': 0}
+
+    def fake_query_crossref(candidate_id: str, **kwargs):
+        calls['count'] += 1
+        return EnrichmentRecord(
+            candidate_id=candidate_id,
+            source_name='crossref',
+            query_type='title',
+            query_string='Shared But Context-Sensitive Title',
+            matched=True,
+            match_score=0.99,
+            external_id='crossref:ctx',
+            title='Shared But Context-Sensitive Title',
+            authors_json=json.dumps(['Yue Wu'], ensure_ascii=False),
+            abstract=None,
+            venue='Nature',
+            year='2026',
+            publication_type='journal-article',
+            doi='10.1000/ctx',
+            pmid=None,
+            pmcid=None,
+            url='https://doi.org/10.1000/ctx',
+            raw_payload_json=json.dumps({'status': 'ok', 'doi': '10.1000/ctx'}, ensure_ascii=False),
+            latency_ms=42,
+        )
+
+    monkeypatch.setattr('mygooglealertpapers.pipeline.enrich.query_crossref', fake_query_crossref)
+
+    enrich_candidates(settings, limit=10)
+
+    assert calls['count'] == 1
+    with sqlite3.connect(db_path) as conn:
+        statuses = conn.execute(
+            '''
+            SELECT candidate_id, status, cache_hit, latency_ms
+            FROM candidate_enrichment_status
+            WHERE provider = 'crossref'
+            ORDER BY candidate_id
+            '''
+        ).fetchall()
+        assert statuses == [
+            ('cand_ctx1', 'ok', 0, 42),
+            ('cand_ctx2', 'ok', 1, 0),
+        ]

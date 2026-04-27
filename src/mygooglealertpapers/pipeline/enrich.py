@@ -11,7 +11,7 @@ from mygooglealertpapers.cost.tracker import CostTracker
 from mygooglealertpapers.db.repository import Repository
 from mygooglealertpapers.enrich.base import cache_metadata_from_record, cache_status_from_record, enrichment_record_from_json, enrichment_record_to_json
 from mygooglealertpapers.enrich.crossref import query_crossref
-from mygooglealertpapers.enrich.openalex import query_openalex, query_openalex_batch_by_doi, _extract_primary_location_fields
+from mygooglealertpapers.enrich.openalex import _extract_primary_location_fields, query_openalex, query_openalex_batch_by_doi
 from mygooglealertpapers.enrich.pubmed import query_pubmed
 from mygooglealertpapers.enrich.semanticscholar import query_semanticscholar
 from mygooglealertpapers.enrich.europepmc import query_europepmc
@@ -21,6 +21,7 @@ from mygooglealertpapers.enrich.unpaywall import query_unpaywall
 logger = logging.getLogger(__name__)
 
 PROGRESS_EVERY = 25
+IDENTIFIER_QUERY_TYPES = {'doi', 'doi_batch', 'pmid', 'pmcid', 'arxiv_id'}
 
 
 @dataclass(slots=True)
@@ -36,6 +37,24 @@ class ProviderIntent:
     first_author_family: str | None
     venue_guess: str | None
     year_guess: str | None
+
+
+@dataclass(slots=True)
+class DispatchGroup:
+    representative: ProviderIntent
+    intents: list[ProviderIntent]
+
+    @property
+    def provider(self) -> str:
+        return self.representative.provider
+
+    @property
+    def query_type(self) -> str:
+        return self.representative.query_type
+
+    @property
+    def query_key(self) -> str:
+        return self.representative.query_key
 
 
 def _canonical_query_key(query_type: str, value: str | None) -> str:
@@ -126,11 +145,7 @@ def _build_provider_intents(settings: Settings, row) -> list[ProviderIntent]:
                 ProviderIntent(candidate_id, 'arxiv', arxiv_query_type, arxiv_query_key, norm_title, doi, pmid, arxiv_id, first_author_family, venue_guess, year_guess)
             )
 
-    # Unpaywall candidate-level path is kept only for controlled comparison.
-    # The recommended production path is post-dedup OA enrichment via `enrich-paper-oa`.
-    # It is NOT a bibliographic authority; it only provides OA metadata.
-    # Trigger only when DOI is available — no title-based search.
-    if _provider_enabled(settings, 'unpaywall', False):  # default False = opt-in
+    if _provider_enabled(settings, 'unpaywall', False):
         if doi:
             intents.append(
                 ProviderIntent(candidate_id, 'unpaywall', 'doi', _canonical_query_key('doi', doi), norm_title, doi, pmid, arxiv_id, first_author_family, venue_guess, year_guess)
@@ -175,9 +190,138 @@ def _record_from_cache(intent: ProviderIntent, payload: str):
     )
 
 
+def _clone_record_for_candidate(rec, candidate_id: str, *, latency_ms: int | None = None):
+    return type(rec)(
+        candidate_id=candidate_id,
+        source_name=rec.source_name,
+        query_type=rec.query_type,
+        query_string=rec.query_string,
+        matched=rec.matched,
+        match_score=rec.match_score,
+        external_id=rec.external_id,
+        title=rec.title,
+        authors_json=rec.authors_json,
+        abstract=rec.abstract,
+        venue=rec.venue,
+        year=rec.year,
+        publication_type=rec.publication_type,
+        doi=rec.doi,
+        pmid=rec.pmid,
+        pmcid=rec.pmcid,
+        url=rec.url,
+        raw_payload_json=rec.raw_payload_json,
+        latency_ms=rec.latency_ms if latency_ms is None else latency_ms,
+    )
+
+
 def _insert_source_record(repo: Repository, conn, rec) -> int:
     repo.insert_source_record(conn, rec)
     return conn.execute('SELECT last_insert_rowid()').fetchone()[0]
+
+
+def _dispatch_signature(intent: ProviderIntent) -> tuple[object, ...]:
+    return (
+        intent.provider,
+        intent.query_type,
+        intent.query_key,
+        intent.norm_title,
+        intent.doi,
+        intent.pmid,
+        intent.arxiv_id,
+        intent.first_author_family,
+        intent.venue_guess,
+        intent.year_guess,
+    )
+
+
+def _build_dispatch_groups(runnable_intents: list[ProviderIntent]) -> list[DispatchGroup]:
+    grouped: dict[tuple[str, str, str], list[ProviderIntent]] = {}
+    ordered_keys: list[tuple[str, str, str]] = []
+    for intent in runnable_intents:
+        key = (intent.provider, intent.query_type, intent.query_key)
+        if key not in grouped:
+            grouped[key] = []
+            ordered_keys.append(key)
+        grouped[key].append(intent)
+
+    dispatch_groups: list[DispatchGroup] = []
+    for key in ordered_keys:
+        intents = grouped[key]
+        representative = intents[0]
+        if len(intents) == 1:
+            dispatch_groups.append(DispatchGroup(representative=representative, intents=intents))
+            continue
+        dedup_safe = representative.query_type in IDENTIFIER_QUERY_TYPES or len({_dispatch_signature(intent) for intent in intents}) == 1
+        if dedup_safe:
+            dispatch_groups.append(DispatchGroup(representative=representative, intents=intents))
+        else:
+            for intent in intents:
+                dispatch_groups.append(DispatchGroup(representative=intent, intents=[intent]))
+    return dispatch_groups
+
+
+def _start_group_statuses(repo: Repository, conn, group: DispatchGroup, *, query_type_override: str | None = None, notes: str | None = None) -> None:
+    for intent in group.intents:
+        repo.start_enrichment_status(
+            conn,
+            candidate_id=intent.candidate_id,
+            provider=intent.provider,
+            query_type=query_type_override or intent.query_type,
+            query_key=intent.query_key,
+            notes=notes,
+        )
+
+
+def _fanout_result_to_group(repo: Repository, tracker: CostTracker, conn, group: DispatchGroup, rec, *, cache_hit: bool, notes: str | None = None) -> int:
+    status = 'ok' if rec.matched else 'no_match'
+    for idx, intent in enumerate(group.intents):
+        emitted_rec = _clone_record_for_candidate(rec, intent.candidate_id, latency_ms=0 if cache_hit or idx > 0 else rec.latency_ms)
+        source_record_id = _insert_source_record(repo, conn, emitted_rec)
+        repo.finish_enrichment_status(
+            conn,
+            candidate_id=intent.candidate_id,
+            provider=intent.provider,
+            status=status,
+            source_record_id=source_record_id,
+            cache_hit=cache_hit,
+            latency_ms=emitted_rec.latency_ms,
+            notes=notes,
+        )
+        tracker.record_stage_cost(
+            conn,
+            stage='enrich_candidates',
+            status='cache_hit' if cache_hit else status,
+            candidate_id=intent.candidate_id,
+            provider=intent.provider,
+            latency_ms=emitted_rec.latency_ms,
+            notes=notes,
+        )
+    return len(group.intents)
+
+
+def _fanout_error_to_group(repo: Repository, tracker: CostTracker, conn, group: DispatchGroup, *, error_summary: str, notes: str | None = None) -> int:
+    for intent in group.intents:
+        repo.finish_enrichment_status(conn, candidate_id=intent.candidate_id, provider=intent.provider, status='error', latency_ms=0, error_summary=error_summary, notes=notes)
+        tracker.record_stage_cost(conn, stage='enrich_candidates', status='error', candidate_id=intent.candidate_id, provider=intent.provider, latency_ms=0, notes=notes or error_summary)
+    return len(group.intents)
+
+
+def _execute_provider_query(settings: Settings, intent: ProviderIntent):
+    if intent.provider == 'pubmed':
+        return query_pubmed(intent.candidate_id, pmid=intent.pmid, title=intent.norm_title, first_author_family=intent.first_author_family, venue_hint=intent.venue_guess, query_year=intent.year_guess, candidate_doi=intent.doi)
+    if intent.provider == 'europepmc':
+        return query_europepmc(intent.candidate_id, doi=intent.doi, pmid=intent.pmid, title=intent.norm_title, first_author_family=intent.first_author_family, venue_hint=intent.venue_guess, query_year=intent.year_guess)
+    if intent.provider == 'arxiv':
+        return query_arxiv(intent.candidate_id, arxiv_id=intent.arxiv_id, title=intent.norm_title if intent.query_type == 'title' else None, first_author_family=intent.first_author_family, query_year=intent.year_guess)
+    if intent.provider == 'semanticscholar':
+        return query_semanticscholar(intent.candidate_id, doi=intent.doi, title=intent.norm_title, first_author_family=intent.first_author_family, venue_hint=intent.venue_guess, query_year=intent.year_guess, api_key=settings.semantic_scholar_api_key)
+    if intent.provider == 'crossref':
+        return query_crossref(intent.candidate_id, doi=intent.doi, title=intent.norm_title, first_author_family=intent.first_author_family, venue_hint=intent.venue_guess, query_year=intent.year_guess, mailto=settings.crossref_mailto)
+    if intent.provider == 'openalex':
+        return query_openalex(intent.candidate_id, doi=intent.doi, title=intent.norm_title, first_author_family=intent.first_author_family, venue_hint=intent.venue_guess, query_year=intent.year_guess, email=settings.openalex_email)
+    if intent.provider == 'unpaywall':
+        return query_unpaywall(intent.candidate_id, doi=intent.doi, email=settings.unpaywall_email)
+    return None
 
 
 def enrich_candidates(settings: Settings, *, limit: int) -> None:
@@ -203,23 +347,31 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
             all_intents.extend(_build_provider_intents(settings, row))
 
         runnable_intents = [intent for intent in all_intents if _should_run_provider(repo, conn, intent)]
-        logger.info('Planned %s provider intent(s); %s need work', len(all_intents), len(runnable_intents))
+        dispatch_groups = _build_dispatch_groups(runnable_intents)
+        logger.info(
+            'Planned %s provider intent(s); %s need work; %s dispatch group(s) after safe dedup',
+            len(all_intents),
+            len(runnable_intents),
+            len(dispatch_groups),
+        )
 
         openalex_doi_batch_enabled = bool(_provider_value(settings, 'openalex', 'doi_batch_enabled', True))
-        openalex_doi_intents = [
-            intent for intent in runnable_intents
-            if openalex_doi_batch_enabled and intent.provider == 'openalex' and intent.query_type == 'doi' and intent.doi
+        openalex_doi_groups = [
+            group for group in dispatch_groups
+            if openalex_doi_batch_enabled and group.provider == 'openalex' and group.query_type == 'doi' and group.representative.doi
         ]
-        handled_openalex_candidates: set[str] = set()
-        if openalex_doi_intents:
-            doi_to_candidate_ids: dict[str, list[str]] = {}
-            for intent in openalex_doi_intents:
-                doi_val = (intent.doi or '').lower()
+        handled_group_keys: set[tuple[str, str, str]] = set()
+        processed_intents = 0
+
+        if openalex_doi_groups:
+            doi_to_group: dict[str, DispatchGroup] = {}
+            for group in openalex_doi_groups:
+                doi_val = (group.representative.doi or '').lower()
                 if not doi_val:
                     continue
-                doi_to_candidate_ids.setdefault(doi_val, []).append(intent.candidate_id)
-                repo.start_enrichment_status(conn, candidate_id=intent.candidate_id, provider='openalex', query_type='doi_batch', query_key=doi_val, notes='planned_batch')
-            doi_values = list(doi_to_candidate_ids.keys())
+                doi_to_group[doi_val] = group
+                _start_group_statuses(repo, conn, group, query_type_override='doi_batch', notes='planned_batch')
+            doi_values = list(doi_to_group.keys())
             for i in range(0, len(doi_values), 50):
                 chunk = doi_values[i:i + 50]
                 logger.info('OpenAlex DOI batch chunk %s-%s / %s DOI(s)', i + 1, i + len(chunk), len(doi_values))
@@ -227,134 +379,113 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
                     results = query_openalex_batch_by_doi(chunk, email=settings.openalex_email)
                 except Exception as exc:
                     for doi_val in chunk:
-                        for candidate_id in doi_to_candidate_ids.get(doi_val, []):
-                            repo.finish_enrichment_status(conn, candidate_id=candidate_id, provider='openalex', status='error', latency_ms=0, error_summary=str(exc), notes='doi_batch_error')
-                            tracker.record_stage_cost(conn, stage='enrich_candidates', status='error', candidate_id=candidate_id, provider='openalex', latency_ms=0, notes='doi_batch_error')
+                        group = doi_to_group[doi_val]
+                        processed_intents += _fanout_error_to_group(repo, tracker, conn, group, error_summary=str(exc), notes='doi_batch_error')
+                        handled_group_keys.add((group.provider, group.query_type, group.query_key))
                     continue
 
-                matched_in_chunk: set[tuple[str, str]] = set()
+                matched_dois: set[str] = set()
                 for item in results:
                     ids = item.get('ids') or {}
                     doi_val = (ids.get('doi') or '').replace('https://doi.org/', '').lower()
-                    if not doi_val or doi_val not in doi_to_candidate_ids:
+                    if not doi_val or doi_val not in doi_to_group:
                         continue
+                    matched_dois.add(doi_val)
                     authors = [a.get('author', {}).get('display_name') for a in item.get('authorships', []) if a.get('author', {}).get('display_name')]
                     venue, url = _extract_primary_location_fields(item)
                     from mygooglealertpapers.enrich.base import EnrichmentRecord
-                    for candidate_id in doi_to_candidate_ids[doi_val]:
-                        rec = EnrichmentRecord(
-                            candidate_id=candidate_id,
-                            source_name='openalex',
-                            query_type='doi_batch',
-                            query_string=doi_val,
-                            matched=True,
-                            match_score=1.0,
-                            external_id=item.get('id'),
-                            title=item.get('display_name'),
-                            authors_json=json.dumps(authors, ensure_ascii=False),
-                            abstract=item.get('abstract_inverted_index') and json.dumps(item.get('abstract_inverted_index')),
-                            venue=venue,
-                            year=str(item.get('publication_year')) if item.get('publication_year') else None,
-                            publication_type=item.get('type'),
-                            doi=doi_val,
-                            pmid=(ids.get('pmid') or '').replace('https://pubmed.ncbi.nlm.nih.gov/', '').strip('/') or None,
-                            pmcid=(ids.get('pmcid') or '').replace('https://www.ncbi.nlm.nih.gov/pmc/articles/', '').strip('/') or None,
-                            url=url,
-                            raw_payload_json=json.dumps(item, ensure_ascii=False),
-                            latency_ms=0,
-                        )
-                        source_record_id = _insert_source_record(repo, conn, rec)
-                        repo.put_query_cache(conn, provider='openalex', query_type='doi', query_key=doi_val, response_json=enrichment_record_to_json(rec), **cache_metadata_from_record(rec))
-                        repo.finish_enrichment_status(conn, candidate_id=candidate_id, provider='openalex', status='ok', source_record_id=source_record_id, cache_hit=False, latency_ms=0, notes='doi_batch')
-                        tracker.record_stage_cost(conn, stage='enrich_candidates', status='ok', candidate_id=candidate_id, provider='openalex', latency_ms=0, notes='doi_batch')
-                        handled_openalex_candidates.add(candidate_id)
-                        matched_in_chunk.add((candidate_id, doi_val))
+                    group = doi_to_group[doi_val]
+                    rec = EnrichmentRecord(
+                        candidate_id=group.representative.candidate_id,
+                        source_name='openalex',
+                        query_type='doi_batch',
+                        query_string=doi_val,
+                        matched=True,
+                        match_score=1.0,
+                        external_id=item.get('id'),
+                        title=item.get('display_name'),
+                        authors_json=json.dumps(authors, ensure_ascii=False),
+                        abstract=item.get('abstract_inverted_index') and json.dumps(item.get('abstract_inverted_index')),
+                        venue=venue,
+                        year=str(item.get('publication_year')) if item.get('publication_year') else None,
+                        publication_type=item.get('type'),
+                        doi=doi_val,
+                        pmid=(ids.get('pmid') or '').replace('https://pubmed.ncbi.nlm.nih.gov/', '').strip('/') or None,
+                        pmcid=(ids.get('pmcid') or '').replace('https://www.ncbi.nlm.nih.gov/pmc/articles/', '').strip('/') or None,
+                        url=url,
+                        raw_payload_json=json.dumps(item, ensure_ascii=False),
+                        latency_ms=0,
+                    )
+                    repo.put_query_cache(conn, provider='openalex', query_type='doi', query_key=doi_val, response_json=enrichment_record_to_json(rec), **cache_metadata_from_record(rec))
+                    processed_intents += _fanout_result_to_group(repo, tracker, conn, group, rec, cache_hit=False, notes='doi_batch')
+                    handled_group_keys.add((group.provider, group.query_type, group.query_key))
 
                 for doi_val in chunk:
-                    for candidate_id in doi_to_candidate_ids.get(doi_val, []):
-                        if (candidate_id, doi_val) not in matched_in_chunk:
-                            from mygooglealertpapers.enrich.base import EnrichmentRecord
-                            rec = EnrichmentRecord(
-                                candidate_id=candidate_id,
-                                source_name='openalex',
-                                query_type='doi_batch',
-                                query_string=doi_val,
-                                matched=False,
-                                match_score=None,
-                                external_id=None,
-                                title=None,
-                                authors_json=None,
-                                abstract=None,
-                                venue=None,
-                                year=None,
-                                publication_type=None,
-                                doi=doi_val,
-                                pmid=None,
-                                pmcid=None,
-                                url=None,
-                                raw_payload_json=json.dumps({'doi': doi_val, 'status': 'no_match', 'provider': 'openalex'}, ensure_ascii=False),
-                                latency_ms=0,
-                            )
-                            source_record_id = _insert_source_record(repo, conn, rec)
-                            repo.put_query_cache(conn, provider='openalex', query_type='doi', query_key=doi_val, response_json=enrichment_record_to_json(rec), **cache_metadata_from_record(rec))
-                            repo.finish_enrichment_status(conn, candidate_id=candidate_id, provider='openalex', status='no_match', source_record_id=source_record_id, latency_ms=0, notes='doi_batch_no_match')
-                            tracker.record_stage_cost(conn, stage='enrich_candidates', status='no_match', candidate_id=candidate_id, provider='openalex', latency_ms=0, notes='doi_batch_no_match')
-                            handled_openalex_candidates.add(candidate_id)
+                    if doi_val in matched_dois:
+                        continue
+                    from mygooglealertpapers.enrich.base import EnrichmentRecord
+                    group = doi_to_group[doi_val]
+                    rec = EnrichmentRecord(
+                        candidate_id=group.representative.candidate_id,
+                        source_name='openalex',
+                        query_type='doi_batch',
+                        query_string=doi_val,
+                        matched=False,
+                        match_score=None,
+                        external_id=None,
+                        title=None,
+                        authors_json=None,
+                        abstract=None,
+                        venue=None,
+                        year=None,
+                        publication_type=None,
+                        doi=doi_val,
+                        pmid=None,
+                        pmcid=None,
+                        url=None,
+                        raw_payload_json=json.dumps({'doi': doi_val, 'status': 'no_match', 'provider': 'openalex'}, ensure_ascii=False),
+                        latency_ms=0,
+                    )
+                    repo.put_query_cache(conn, provider='openalex', query_type='doi', query_key=doi_val, response_json=enrichment_record_to_json(rec), **cache_metadata_from_record(rec))
+                    processed_intents += _fanout_result_to_group(repo, tracker, conn, group, rec, cache_hit=False, notes='doi_batch_no_match')
+                    handled_group_keys.add((group.provider, group.query_type, group.query_key))
                 conn.commit()
 
-        processed_intents = 0
-        for intent in runnable_intents:
-            if intent.provider == 'openalex' and intent.candidate_id in handled_openalex_candidates and intent.query_type == 'doi':
+        for group in dispatch_groups:
+            group_key = (group.provider, group.query_type, group.query_key)
+            if group_key in handled_group_keys:
                 continue
 
             logger.info(
-                'Enrich intent %s/%s: provider=%s query_type=%s candidate_id=%s',
+                'Enrich dispatch %s/%s: provider=%s query_type=%s query_key=%s fanout=%s',
                 processed_intents + 1,
                 len(runnable_intents),
-                intent.provider,
-                intent.query_type,
-                intent.candidate_id,
+                group.provider,
+                group.query_type,
+                group.query_key,
+                len(group.intents),
             )
-            repo.start_enrichment_status(conn, candidate_id=intent.candidate_id, provider=intent.provider, query_type=intent.query_type, query_key=intent.query_key)
-            cached = repo.get_query_cache(conn, provider=intent.provider, query_type=intent.query_type, query_key=intent.query_key)
+            _start_group_statuses(repo, conn, group)
+            cached = repo.get_query_cache(conn, provider=group.provider, query_type=group.query_type, query_key=group.query_key)
             if cached:
                 cached_rec = enrichment_record_from_json(cached[0])
                 if cache_status_from_record(cached_rec) != 'transient_error':
-                    rec = _record_from_cache(intent, cached[0])
-                    source_record_id = _insert_source_record(repo, conn, rec)
-                    status = 'ok' if rec.matched else 'no_match'
-                    repo.finish_enrichment_status(conn, candidate_id=intent.candidate_id, provider=intent.provider, status=status, source_record_id=source_record_id, cache_hit=True, latency_ms=0)
-                    tracker.record_stage_cost(conn, stage='enrich_candidates', status='cache_hit', candidate_id=intent.candidate_id, provider=intent.provider, latency_ms=0)
-                    processed_intents += 1
+                    rec = _record_from_cache(group.representative, cached[0])
+                    processed_intents += _fanout_result_to_group(repo, tracker, conn, group, rec, cache_hit=True)
                     if processed_intents % PROGRESS_EVERY == 0:
                         logger.info('Enrich progress: processed %s / %s runnable intent(s)', processed_intents, len(runnable_intents))
                         conn.commit()
                     continue
 
             try:
-                if intent.provider == 'pubmed':
-                    rec = query_pubmed(intent.candidate_id, pmid=intent.pmid, title=intent.norm_title, first_author_family=intent.first_author_family, venue_hint=intent.venue_guess, query_year=intent.year_guess, candidate_doi=intent.doi)
-                elif intent.provider == 'europepmc':
-                    rec = query_europepmc(intent.candidate_id, doi=intent.doi, pmid=intent.pmid, title=intent.norm_title, first_author_family=intent.first_author_family, venue_hint=intent.venue_guess, query_year=intent.year_guess)
-                elif intent.provider == 'arxiv':
-                    rec = query_arxiv(intent.candidate_id, arxiv_id=intent.arxiv_id, title=intent.norm_title if intent.query_type == 'title' else None, first_author_family=intent.first_author_family, query_year=intent.year_guess)
-                elif intent.provider == 'semanticscholar':
-                    rec = query_semanticscholar(intent.candidate_id, doi=intent.doi, title=intent.norm_title, first_author_family=intent.first_author_family, venue_hint=intent.venue_guess, query_year=intent.year_guess, api_key=settings.semantic_scholar_api_key)
-                elif intent.provider == 'crossref':
-                    rec = query_crossref(intent.candidate_id, doi=intent.doi, title=intent.norm_title, first_author_family=intent.first_author_family, venue_hint=intent.venue_guess, query_year=intent.year_guess, mailto=settings.crossref_mailto)
-                elif intent.provider == 'openalex':
-                    rec = query_openalex(intent.candidate_id, doi=intent.doi, title=intent.norm_title, first_author_family=intent.first_author_family, venue_hint=intent.venue_guess, query_year=intent.year_guess, email=settings.openalex_email)
-                elif intent.provider == 'unpaywall':
-                    rec = query_unpaywall(intent.candidate_id, doi=intent.doi, email=settings.unpaywall_email)
-                else:
-                    rec = None
+                rec = _execute_provider_query(settings, group.representative)
             except Exception as exc:
                 from mygooglealertpapers.enrich.base import EnrichmentRecord
                 rec = EnrichmentRecord(
-                    candidate_id=intent.candidate_id,
-                    source_name=intent.provider,
-                    query_type=intent.query_type,
-                    query_string=intent.query_key,
+                    candidate_id=group.representative.candidate_id,
+                    source_name=group.provider,
+                    query_type=group.query_type,
+                    query_string=group.query_key,
                     matched=False,
                     match_score=None,
                     external_id=None,
@@ -364,17 +495,15 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
                     venue=None,
                     year=None,
                     publication_type=None,
-                    doi=intent.doi if intent.query_type == 'doi' else None,
-                    pmid=intent.pmid if intent.query_type == 'pmid' else None,
+                    doi=group.representative.doi if group.query_type == 'doi' else None,
+                    pmid=group.representative.pmid if group.query_type == 'pmid' else None,
                     pmcid=None,
                     url=None,
-                    raw_payload_json=json.dumps({'status': 'error', 'provider': intent.provider, 'error': str(exc)}, ensure_ascii=False),
+                    raw_payload_json=json.dumps({'status': 'error', 'provider': group.provider, 'error': str(exc)}, ensure_ascii=False),
                     latency_ms=0,
                 )
-                repo.put_query_cache(conn, provider=intent.provider, query_type=intent.query_type, query_key=intent.query_key, response_json=enrichment_record_to_json(rec), **cache_metadata_from_record(rec))
-                repo.finish_enrichment_status(conn, candidate_id=intent.candidate_id, provider=intent.provider, status='error', latency_ms=0, error_summary=str(exc))
-                tracker.record_stage_cost(conn, stage='enrich_candidates', status='error', candidate_id=intent.candidate_id, provider=intent.provider, latency_ms=0, notes=str(exc))
-                processed_intents += 1
+                repo.put_query_cache(conn, provider=group.provider, query_type=group.query_type, query_key=group.query_key, response_json=enrichment_record_to_json(rec), **cache_metadata_from_record(rec))
+                processed_intents += _fanout_error_to_group(repo, tracker, conn, group, error_summary=str(exc))
                 if processed_intents % PROGRESS_EVERY == 0:
                     logger.info('Enrich progress: processed %s / %s runnable intent(s)', processed_intents, len(runnable_intents))
                     conn.commit()
@@ -383,10 +512,10 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
             if rec is None:
                 from mygooglealertpapers.enrich.base import EnrichmentRecord
                 rec = EnrichmentRecord(
-                    candidate_id=intent.candidate_id,
-                    source_name=intent.provider,
-                    query_type=intent.query_type,
-                    query_string=intent.query_key,
+                    candidate_id=group.representative.candidate_id,
+                    source_name=group.provider,
+                    query_type=group.query_type,
+                    query_string=group.query_key,
                     matched=False,
                     match_score=None,
                     external_id=None,
@@ -396,29 +525,22 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
                     venue=None,
                     year=None,
                     publication_type=None,
-                    doi=intent.doi if intent.query_type == 'doi' else None,
-                    pmid=intent.pmid if intent.query_type == 'pmid' else None,
+                    doi=group.representative.doi if group.query_type == 'doi' else None,
+                    pmid=group.representative.pmid if group.query_type == 'pmid' else None,
                     pmcid=None,
                     url=None,
-                    raw_payload_json=json.dumps({'status': 'no_match', 'provider': intent.provider, 'query_key': intent.query_key}, ensure_ascii=False),
+                    raw_payload_json=json.dumps({'status': 'no_match', 'provider': group.provider, 'query_key': group.query_key}, ensure_ascii=False),
                     latency_ms=0,
                 )
-                repo.put_query_cache(conn, provider=intent.provider, query_type=intent.query_type, query_key=intent.query_key, response_json=enrichment_record_to_json(rec), **cache_metadata_from_record(rec))
-                source_record_id = _insert_source_record(repo, conn, rec)
-                repo.finish_enrichment_status(conn, candidate_id=intent.candidate_id, provider=intent.provider, status='no_match', source_record_id=source_record_id, latency_ms=0, notes='no_record_returned')
-                tracker.record_stage_cost(conn, stage='enrich_candidates', status='no_match', candidate_id=intent.candidate_id, provider=intent.provider, latency_ms=0, notes='no_record_returned')
-                processed_intents += 1
+                repo.put_query_cache(conn, provider=group.provider, query_type=group.query_type, query_key=group.query_key, response_json=enrichment_record_to_json(rec), **cache_metadata_from_record(rec))
+                processed_intents += _fanout_result_to_group(repo, tracker, conn, group, rec, cache_hit=False, notes='no_record_returned')
                 if processed_intents % PROGRESS_EVERY == 0:
                     logger.info('Enrich progress: processed %s / %s runnable intent(s)', processed_intents, len(runnable_intents))
                     conn.commit()
                 continue
 
-            repo.put_query_cache(conn, provider=intent.provider, query_type=intent.query_type, query_key=intent.query_key, response_json=enrichment_record_to_json(rec), **cache_metadata_from_record(rec))
-            source_record_id = _insert_source_record(repo, conn, rec)
-            status = 'ok' if rec.matched else 'no_match'
-            repo.finish_enrichment_status(conn, candidate_id=intent.candidate_id, provider=intent.provider, status=status, source_record_id=source_record_id, cache_hit=False, latency_ms=rec.latency_ms)
-            tracker.record_stage_cost(conn, stage='enrich_candidates', status=status, candidate_id=intent.candidate_id, provider=intent.provider, latency_ms=rec.latency_ms)
-            processed_intents += 1
+            repo.put_query_cache(conn, provider=group.provider, query_type=group.query_type, query_key=group.query_key, response_json=enrichment_record_to_json(rec), **cache_metadata_from_record(rec))
+            processed_intents += _fanout_result_to_group(repo, tracker, conn, group, rec, cache_hit=False)
             if processed_intents % PROGRESS_EVERY == 0:
                 logger.info('Enrich progress: processed %s / %s runnable intent(s)', processed_intents, len(runnable_intents))
                 conn.commit()
