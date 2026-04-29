@@ -42,8 +42,9 @@ Excluded by lane gate:
 |---|---:|---:|---:|---:|---:|---|
 | Day 4 no-`semanticscholar` reference | 325 / 354 | 91.8% | n/a | n/a | projected 10.79 min | mixed live fanout |
 | `identifier_fastpath` | 100 / 474 | 21.1% | 46 | 94 | 69.75 s | `crossref` DOI |
-| `identifier_plus_title_core` | 246 / 474 | 51.9% | 178 | 194 | 455.18 s | `crossref` title + `openalex` title |
+| `identifier_plus_title_core` (slice120) | 246 / 474 | 51.9% | 178 | 194 | 455.18 s | `crossref` title + `openalex` title |
 | `identifier_plus_title_core_budget60` | 172 / 474 | 36.3% | 106 | 145 | 250.67 s | `crossref` title (budget-capped) |
+| `identifier_plus_title_core` (slice150 live) | 308 / 588 | 52.4% | 220 | 251 | 499.50 s | `crossref` title + `openalex` title |
 
 ## Direct observations
 
@@ -80,6 +81,25 @@ Excluded by lane gate:
   - **250.67 s vs 455.18 s**
 - Mechanistically, this is the first proof that lane budgets are not just a config abstraction — they produce a clean, inspectable live stop boundary.
 
+### Follow-up live validation: `identifier_plus_title_core` on slice150
+- A closer-to-production live replay on the full slice150 seed also completed cleanly.
+- Key output:
+  - processed intents: **308 / 588**
+  - dispatch requests: **220**
+  - matched source records: **251**
+  - canonical papers after merge/dedup: **130**
+  - merge review queue: **0**
+  - total batch duration: **499.50 s**
+- Lane accounting remained coherent:
+  - `lane_dispatch_request_count.identifier_fastpath = 62`
+  - `lane_dispatch_request_count.title_core = 158`
+  - `lane_elapsed_ms.identifier_fastpath = 85712`
+  - `lane_elapsed_ms.title_core = 413686`
+- Main cost center remained unchanged:
+  - `crossref`: **336689 ms** across **150 events**
+  - `openalex`: **144986 ms** across **150 events**
+- This matters because the slice120 result was not a fragile small-sample artifact; the same lane shape still held on the larger live slice.
+
 ## Mechanistic interpretation
 
 The lane split works.
@@ -108,17 +128,23 @@ Current evidence supports the following runtime strategy:
 
 - **Do not go back to full-provider synchronous enrich.**
 - Treat **`identifier_fastpath` as the guaranteed live base lane**.
-- Treat **`identifier_fastpath + title_core` as the main candidate for the next live default experiment**.
+- **Promote `identifier_fastpath + title_core` to the recommended synchronous live default profile.**
+- Treat **`openalex_batching_identifier_plus_title_core_budget60`** as the stricter fallback profile when wall-time headroom is tight or the operator wants an explicit stop boundary.
 - Treat **lane budgets / stop conditions as promoted runtime control**, not just an experimental branch idea.
 - Keep `biomedical_fallback` and `slow_fallback` out of the default synchronous path for now.
+
+This is a **yes, but scoped** promotion:
+- yes for the operational synchronous live path,
+- not a claim that uncapped title-core should automatically handle every larger burst without operator judgment,
+- and not a reason to postpone further `crossref` title-lane optimization.
 
 ## Next coding target
 
 The next useful optimization target is no longer “provider on/off” in the abstract. It is specifically:
 
-1. tune `title_core` budget shape (request count and, if needed, runtime cap)
-2. reduce `crossref` title-lane wall time
-3. make budgeted-lane summaries first-class in reports and docs
+1. reduce `crossref` title-lane wall time inside the promoted synchronous default
+2. tune `title_core` budget shape (request count and, if needed, runtime cap) against the promoted default
+3. use the budgeted profile as an explicit degraded-safe mode, not as the primary default
 4. only then revisit provider-specific concurrency or circuit breakers
 
 ## Artifact paths
@@ -129,3 +155,5 @@ The next useful optimization target is no longer “provider on/off” in the ab
 - `docs/validation/day5-identifier-fastpath-120-20260429.json`
 - `docs/validation/day5-identifier-plus-title-core-120-20260429.json`
 - `docs/validation/day5-identifier-plus-title-core-budget60-120-20260429.json`
+- `docs/validation/day5-identifier-plus-title-core-live150-20260429.json`
+- `docs/validation/day5-identifier-plus-title-core-live150-20260429.md`

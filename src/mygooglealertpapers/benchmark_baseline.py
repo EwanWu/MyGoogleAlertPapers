@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-DEFAULT_POLICY_PROFILE = 'config/policy_profiles/conditional_sources_v2_author_blob_fallback_only.yaml'
+DEFAULT_POLICY_PROFILE = 'config/policy_profiles/openalex_batching_identifier_plus_title_core.yaml'
 DEFAULT_STAGES = ('enrich', 'merge', 'dedup')
 
 

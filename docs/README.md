@@ -18,6 +18,7 @@ Read these first when you want the current project state, current default flow, 
 8. `docs/validation/trackB-unpaywall-decision-memo-20260422.md` — ✅ **COMPLETED 2026-04-22**
 9. `docs/validation/mainline-summary-20260422_mainline.md`
 10. `docs/validation/day5-provider-lane-ablation-120-20260429.md`
+11. `docs/validation/day5-identifier-plus-title-core-live150-20260429.md`
 
 ### Current active decision layer
 
@@ -29,10 +30,13 @@ Read these first when you want the current project state, current default flow, 
 - `docs/validation/trackB-unpaywall-decision-memo-20260422.md`
 - `docs/validation/mainline-summary-20260422_mainline.md`
 - `docs/validation/day5-provider-lane-ablation-120-20260429.md`
+- `docs/validation/day5-identifier-plus-title-core-live150-20260429.md`
 
 ### Current runtime / provider-lane validation
 
-- `docs/validation/day5-provider-lane-ablation-120-20260429.md` — current runtime-lane memo covering both lane gating and the first budgeted title-core stop-condition replay; establishes `identifier_fastpath` as the safe live core, `identifier_fastpath + title_core` as the main synchronous candidate, and budget-capped `title_core` as a viable stricter live mode
+- `docs/validation/day5-provider-lane-ablation-120-20260429.md` — current runtime-lane memo covering lane gating, the first budgeted title-core stop-condition replay, and the live150 follow-up decision
+- `docs/validation/day5-identifier-plus-title-core-live150-20260429.md` — closest-to-production slice150 live replay for the promoted synchronous lane profile; confirms clean enrich→merge→dedup completion without reopening slow fallback lanes
+- code/runtime note: the builtin CLI default and baseline helper default are now aligned to `openalex_batching_identifier_plus_title_core`, so runs without an explicit `MGAP_POLICY_PROFILE` no longer fall back to the older full-provider synchronous default
 
 ### Current operations / data-acquisition validation
 

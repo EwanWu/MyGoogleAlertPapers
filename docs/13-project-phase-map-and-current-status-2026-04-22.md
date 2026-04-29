@@ -89,12 +89,14 @@ The current runtime-default additions are justified by a smaller but decision-gr
 - `docs/validation/day3-dispatch-report-smoke12-20260427.md`
 - `docs/validation/recorded_deterministic_ab_medium60_20260427.md`
 - `docs/validation/day5-provider-lane-ablation-120-20260429.md`
+- `docs/validation/day5-identifier-plus-title-core-live150-20260429.md`
 
 What these established:
 - Day 2 operator-boundary hardening is in place and regression-tested
 - Day 3 dispatch/cache/runtime changes did not break the validated merge/dedup path
 - narrow-scope title payload reuse was promoted only after deterministic recorded-payload replay showed zero candidate-level semantic drift on the medium60 comparison
-- explicit runtime lane gating is now viable: `identifier_fastpath` is a stable live core, and `identifier_fastpath + title_core` is the current best candidate for the synchronous default path
+- explicit runtime lane gating is now viable: `identifier_fastpath` is a stable live core, and `identifier_fastpath + title_core` has now completed a closer-to-production slice150 live replay cleanly enough to justify promotion as the recommended synchronous default profile
+- that promotion is no longer only documentary: the builtin CLI default and baseline helper default have been rebound to the `identifier_fastpath + title_core` profile, so default runs now execute the staged live path rather than the older full-provider synchronous fanout
 - explicit per-lane stop conditions are now also viable: a budget-capped `title_core` run stops cleanly, records its stop reason in dispatch stats, and yields a controllable coverage/runtime tradeoff instead of a timeout boundary
 
 ## Active document set to read now
@@ -114,24 +116,25 @@ What these established:
 
 ## What is still open
 
-The main unresolved problem is no longer whether narrow Day 3 runtime optimizations should ship. The current unresolved problem is **how to turn enrich into an explicit staged lane system with controllable live budgets**.
+The main unresolved problem is no longer whether staged live lanes are viable. That part is now established. The current unresolved problem is **how to keep the promoted `identifier_fastpath + title_core` default fast enough under wider live bursts, mainly by controlling `crossref` title-lane cost and budget shape**.
 
 The next useful validation is:
 - preserve the current promoted mainline/runtime defaults
-- treat `identifier_fastpath + title_core` as the primary live-lane candidate
+- use `identifier_fastpath + title_core` as the recommended synchronous live default profile
 - keep `biomedical_fallback` and `slow_fallback` outside the synchronous default path until separately budgeted
 - tune `title_core` budget shape and prioritize request-reduction inside that lane, especially `crossref` title cost, while keeping judgment on fixed-seed replay
 
 ## Immediate next-step direction
 
-The most promising next phase is no longer broad policy exploration. It is **provider-lane execution control with replay-checked semantics**.
+The most promising next phase is no longer broad policy exploration. It is **runtime hardening of the promoted synchronous lane default**.
 
 Recommended order:
 1. keep `identifier_fastpath` as the guaranteed live base lane
-2. optimize the `title_core` lane as the main synchronous extension, with special focus on `crossref` title cost
-3. tune explicit lane budgets / stop conditions before attempting provider concurrency
-4. keep every new scheduling optimization behind fixed-seed replay and, when needed, recorded-payload replay
-5. avoid changing match standards unless a new correctness problem appears
+2. keep `identifier_fastpath + title_core` as the promoted synchronous default profile
+3. optimize the `title_core` lane, with special focus on `crossref` title cost
+4. tune explicit lane budgets / stop conditions as degraded-safe modes before attempting provider concurrency
+5. keep every new scheduling optimization behind fixed-seed replay and, when needed, recorded-payload replay
+6. avoid changing match standards unless a new correctness problem appears
 
 ## What should not be reopened casually
 
