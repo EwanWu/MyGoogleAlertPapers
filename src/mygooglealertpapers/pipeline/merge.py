@@ -618,7 +618,8 @@ def build_merged_metadata(settings: Settings, *, limit: int) -> None:
             SELECT pcn.candidate_id
             FROM paper_candidate_normalized pcn
             LEFT JOIN merged_metadata_proposal mmp ON mmp.candidate_id = pcn.candidate_id
-            WHERE mmp.id IS NULL
+            LEFT JOIN candidate_paper_link cpl ON cpl.candidate_id = pcn.candidate_id
+            WHERE mmp.id IS NULL AND cpl.id IS NULL
             ORDER BY pcn.id ASC
             LIMIT ?
             """,

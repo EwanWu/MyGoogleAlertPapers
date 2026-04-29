@@ -4,9 +4,12 @@ import json
 import sqlite3
 from pathlib import Path
 
-from mygooglealertpapers.db.schema import configure_connection
+from mygooglealertpapers.db.schema import configure_connection, create_schema
 from mygooglealertpapers.mail.candidate_extractor import PaperCandidateRaw
 from mygooglealertpapers.mail.message_parser import ParsedEmail
+
+
+_SCHEMA_READY_PATHS: set[str] = set()
 
 
 class Repository:
@@ -16,6 +19,10 @@ class Repository:
     def connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path)
         configure_connection(conn)
+        resolved = str(self.db_path.resolve())
+        if resolved not in _SCHEMA_READY_PATHS:
+            create_schema(conn)
+            _SCHEMA_READY_PATHS.add(resolved)
         conn.row_factory = sqlite3.Row
         return conn
 
@@ -372,6 +379,141 @@ class Repository:
             ''',
             (candidate_id, provider, status, source_record_id),
         )
+
+    def upsert_candidate_paper_link(
+        self,
+        conn: sqlite3.Connection,
+        *,
+        candidate_id: str,
+        paper_id: str,
+        relation_type: str,
+        confidence: float,
+        evidence_json: str,
+    ) -> None:
+        conn.execute(
+            '''
+            INSERT INTO candidate_paper_link (
+                candidate_id, paper_id, relation_type, confidence, evidence_json
+            ) VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(candidate_id, paper_id, relation_type) DO UPDATE SET
+                confidence = excluded.confidence,
+                evidence_json = excluded.evidence_json,
+                created_at = CURRENT_TIMESTAMP
+            ''',
+            (candidate_id, paper_id, relation_type, confidence, evidence_json),
+        )
+
+    def upsert_candidate_resolution_status(
+        self,
+        conn: sqlite3.Connection,
+        *,
+        candidate_id: str,
+        resolution_stage: str,
+        resolution_rule: str | None,
+        paper_id: str | None,
+        leader_candidate_id: str | None,
+        status: str,
+        evidence_json: str | None,
+    ) -> None:
+        conn.execute(
+            '''
+            INSERT INTO candidate_resolution_status (
+                candidate_id, resolution_stage, resolution_rule, paper_id,
+                leader_candidate_id, status, evidence_json, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(candidate_id) DO UPDATE SET
+                resolution_stage = excluded.resolution_stage,
+                resolution_rule = excluded.resolution_rule,
+                paper_id = excluded.paper_id,
+                leader_candidate_id = excluded.leader_candidate_id,
+                status = excluded.status,
+                evidence_json = excluded.evidence_json,
+                updated_at = CURRENT_TIMESTAMP
+            ''',
+            (candidate_id, resolution_stage, resolution_rule, paper_id, leader_candidate_id, status, evidence_json),
+        )
+
+    def find_canonical_paper_by_field(self, conn: sqlite3.Connection, *, field_name: str, field_value: str):
+        if field_name not in {'canonical_doi', 'canonical_pmid', 'canonical_pmcid'}:
+            raise ValueError(f'unsupported canonical field lookup: {field_name}')
+        return conn.execute(
+            f'''SELECT paper_id FROM canonical_paper WHERE {field_name} = ? LIMIT 1''',
+            (field_value,),
+        ).fetchone()
+
+    def find_paper_by_identity_alias(self, conn: sqlite3.Connection, *, alias_type: str, alias_key: str):
+        return conn.execute(
+            '''
+            SELECT paper_id, confidence, source_stage
+            FROM paper_identity_alias
+            WHERE alias_type = ? AND alias_key = ?
+            LIMIT 1
+            ''',
+            (alias_type, alias_key),
+        ).fetchone()
+
+    def upsert_paper_identity_alias(
+        self,
+        conn: sqlite3.Connection,
+        *,
+        paper_id: str,
+        alias_type: str,
+        alias_key: str,
+        confidence: float,
+        source_stage: str,
+    ) -> None:
+        conn.execute(
+            '''
+            INSERT INTO paper_identity_alias (
+                paper_id, alias_type, alias_key, confidence, source_stage, updated_at
+            ) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(alias_type, alias_key) DO UPDATE SET
+                confidence = CASE
+                    WHEN paper_identity_alias.paper_id = excluded.paper_id THEN excluded.confidence
+                    ELSE paper_identity_alias.confidence
+                END,
+                source_stage = CASE
+                    WHEN paper_identity_alias.paper_id = excluded.paper_id THEN excluded.source_stage
+                    ELSE paper_identity_alias.source_stage
+                END,
+                updated_at = CURRENT_TIMESTAMP
+            ''',
+            (paper_id, alias_type, alias_key, confidence, source_stage),
+        )
+
+    def refresh_paper_identity_aliases_from_links(self, conn: sqlite3.Connection) -> int:
+        rows = conn.execute(
+            '''
+            SELECT cpl.paper_id, pcn.doi_extracted, pcn.pmid_extracted, pcn.pmcid_extracted,
+                   pcn.arxiv_id_extracted, pcn.url_canonical, pcn.scholar_cluster_hint
+            FROM candidate_paper_link cpl
+            JOIN paper_candidate_normalized pcn ON pcn.candidate_id = cpl.candidate_id
+            '''
+        ).fetchall()
+        inserted = 0
+        for row in rows:
+            paper_id = row[0]
+            alias_rows = [
+                ('doi', row[1], 1.0),
+                ('pmid', row[2], 1.0),
+                ('pmcid', row[3], 1.0),
+                ('arxiv', row[4], 0.99),
+                ('url_canonical', row[5], 0.97),
+                ('scholar_cluster', row[6], 0.98),
+            ]
+            for alias_type, alias_key, confidence in alias_rows:
+                if alias_key is None or not str(alias_key).strip():
+                    continue
+                self.upsert_paper_identity_alias(
+                    conn,
+                    paper_id=paper_id,
+                    alias_type=alias_type,
+                    alias_key=str(alias_key).strip(),
+                    confidence=confidence,
+                    source_stage='dedup_backfill',
+                )
+                inserted += 1
+        return inserted
 
     def get_paper_oa_status(self, conn: sqlite3.Connection, *, paper_id: str, provider: str):
         return conn.execute(

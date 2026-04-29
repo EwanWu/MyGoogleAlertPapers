@@ -28,7 +28,14 @@ def build_enrichment_stats(db_path: Path) -> str:
         if dispatch_stats:
             lines.extend([
                 '- dispatch summary:',
+                f"  - candidate count: {dispatch_stats.get('candidate_count')}",
+                f"  - unresolved candidates: {dispatch_stats.get('unresolved_candidate_count')}",
+                f"  - library prelink enabled: {dispatch_stats.get('library_prelink_enabled')}",
+                f"  - library prelinked candidates: {dispatch_stats.get('library_prelinked_candidate_count')}",
+                f"  - library prelink rule counts: {dispatch_stats.get('library_prelink_rule_counts')}",
                 f"  - runnable provider intents: {dispatch_stats.get('runnable_provider_intents')}",
+                f"  - prelink-skipped provider intents: {dispatch_stats.get('prelink_skipped_provider_intents')}",
+                f"  - unresolved provider intents: {dispatch_stats.get('unresolved_provider_intents')}",
                 f"  - dispatch groups: {dispatch_stats.get('dispatch_group_count')}",
                 f"  - dispatch requests: {dispatch_stats.get('dispatch_request_count')}",
                 f"  - processed runnable intents: {dispatch_stats.get('processed_runnable_intents', dispatch_stats.get('runnable_provider_intents'))}/{dispatch_stats.get('runnable_provider_intents')}",

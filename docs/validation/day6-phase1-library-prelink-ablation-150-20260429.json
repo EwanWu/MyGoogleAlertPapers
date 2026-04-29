@@ -1,0 +1,77 @@
+{
+  "experiment": "phase1_library_prelink_ablation_150",
+  "date": "2026-04-29",
+  "goal": "Quantify exact library-first prelink impact before provider enrich using the same identifier_fastpath + title_core runtime shape.",
+  "library_db": "data/mgap_mainline_treat_20260422_mainline.db",
+  "incoming_seed_db": "data/mgap_pkgB_large_slice150_seed_20260416_slice150.db",
+  "incoming_candidate_prefix": "phase1_150_",
+  "incoming_candidate_count": 155,
+  "control": {
+    "profile": "config/policy_profiles/openalex_batching_identifier_plus_title_core_no_library_prelink.yaml",
+    "db": "data/benchmark/day6_phase1_library_prelink_control150_20260429.db",
+    "status": "running_then_stopped_after_lower_bound_was_obvious",
+    "duration_ms_lower_bound": 418854,
+    "processed_count_lower_bound": 275,
+    "planned_provider_intents": 611,
+    "library_prelinked_candidate_count": 0,
+    "prelink_skipped_provider_intents": 0,
+    "unresolved_provider_intents": 611,
+    "runnable_provider_intents": 588,
+    "dispatch_group_count": 270,
+    "dispatch_request_count_lower_bound": 132,
+    "processed_runnable_intents_lower_bound": 275,
+    "lane_group_counts": {
+      "identifier_fastpath": 112,
+      "title_core": 158
+    },
+    "lane_dispatch_request_count_lower_bound": {
+      "identifier_fastpath": 5,
+      "title_core": 127
+    }
+  },
+  "treatment": {
+    "profile": "config/policy_profiles/openalex_batching_identifier_plus_title_core.yaml",
+    "db": "data/benchmark/day6_phase1_library_prelink_treat150_20260429.db",
+    "status": "ok",
+    "duration_ms": 6008,
+    "processed_count": 2,
+    "planned_provider_intents": 611,
+    "library_prelinked_candidate_count": 149,
+    "library_prelink_rule_counts": {
+      "url_canonical_exact": 78,
+      "doi_exact": 63,
+      "pmid_exact": 3,
+      "pmcid_exact": 3,
+      "arxiv_exact": 2
+    },
+    "prelink_skipped_provider_intents": 585,
+    "unresolved_provider_intents": 26,
+    "runnable_provider_intents": 3,
+    "dispatch_group_count": 2,
+    "dispatch_request_count": 2,
+    "processed_runnable_intents": 2,
+    "lane_group_counts": {
+      "title_core": 2
+    },
+    "lane_dispatch_request_count": {
+      "title_core": 2
+    },
+    "merge_metadata_duration_ms": 14,
+    "merge_metadata_processed_count": 2,
+    "dedup_candidates_duration_ms": 10,
+    "dedup_candidates_processed_count": 0
+  },
+  "derived": {
+    "library_prelink_hit_ratio": 0.9612903225806452,
+    "provider_intent_skip_ratio": 0.9574468085106383,
+    "runnable_intent_reduction_ratio_vs_control": 0.9948979591836735,
+    "dispatch_group_reduction_ratio_vs_control": 0.9925925925925926,
+    "dispatch_request_reduction_ratio_lower_bound_vs_control": 0.9848484848484849,
+    "wall_time_speedup_lower_bound_vs_control": 69.71571238348869
+  },
+  "notes": [
+    "Control and treatment used the same promoted synchronous lane shape; only library_prelink_enabled differed.",
+    "The control run was intentionally stopped once the lower-bound delta was already decisive, to avoid wasting provider time on a now-proven negative control.",
+    "This experiment measures exact library-first short-circuit value, not fuzzy title-based global prelinking."
+  ]
+}

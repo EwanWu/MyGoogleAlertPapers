@@ -18,6 +18,7 @@ from mygooglealertpapers.enrich.semanticscholar import build_semanticscholar_rec
 from mygooglealertpapers.enrich.europepmc import query_europepmc
 from mygooglealertpapers.enrich.arxiv import query_arxiv
 from mygooglealertpapers.enrich.unpaywall import query_unpaywall
+from mygooglealertpapers.pipeline.candidate_resolution import library_prelink_enabled, prelink_candidates_against_library
 
 logger = logging.getLogger(__name__)
 
@@ -610,8 +611,11 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
         rows = conn.execute(
             '''
             SELECT pcn.candidate_id, pcn.norm_title, pcn.doi_extracted, pcn.pmid_extracted,
-                   pcn.arxiv_id_extracted, pcn.first_author_family, pcn.venue_guess, pcn.year_guess
+                   pcn.arxiv_id_extracted, pcn.first_author_family, pcn.venue_guess, pcn.year_guess,
+                   pcn.pmcid_extracted, pcn.url_canonical, pcn.scholar_cluster_hint
             FROM paper_candidate_normalized pcn
+            LEFT JOIN candidate_paper_link cpl ON cpl.candidate_id = pcn.candidate_id
+            WHERE cpl.id IS NULL
             ORDER BY pcn.id ASC
             LIMIT ?
             ''',
@@ -620,9 +624,13 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
 
         all_intents: list[ProviderIntent] = []
         for row in rows:
-            all_intents.extend(_build_provider_intents(settings, row))
+            all_intents.extend(_build_provider_intents(settings, row[:8]))
 
-        runnable_intents = [intent for intent in all_intents if _should_run_provider(repo, conn, intent)]
+        prelink_summary = prelink_candidates_against_library(settings, repo, tracker, conn, rows)
+        prelinked_candidate_ids = set(prelink_summary['prelinked_candidate_ids'])
+        unresolved_intents = [intent for intent in all_intents if intent.candidate_id not in prelinked_candidate_ids]
+
+        runnable_intents = [intent for intent in unresolved_intents if _should_run_provider(repo, conn, intent)]
         dispatch_groups, lane_group_counts, lane_intent_counts = _prepare_dispatch_groups(settings, runnable_intents)
         logger.info(
             'Planned %s provider intent(s); %s need work; %s dispatch group(s) after safe dedup; lanes=%s',
@@ -634,7 +642,14 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
 
         openalex_doi_batch_enabled = bool(_provider_value(settings, 'openalex', 'doi_batch_enabled', True))
         dispatch_stats = {
+            'candidate_count': len(rows),
+            'unresolved_candidate_count': len({intent.candidate_id for intent in unresolved_intents}),
+            'library_prelink_enabled': library_prelink_enabled(settings),
+            'library_prelinked_candidate_count': prelink_summary['prelinked_candidate_count'],
+            'library_prelink_rule_counts': prelink_summary['rule_counts'],
             'planned_provider_intents': len(all_intents),
+            'prelink_skipped_provider_intents': len(all_intents) - len(unresolved_intents),
+            'unresolved_provider_intents': len(unresolved_intents),
             'runnable_provider_intents': len(runnable_intents),
             'dispatch_group_count': len(dispatch_groups),
             'lane_order': _lane_order(settings),

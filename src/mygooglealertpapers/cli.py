@@ -9,6 +9,7 @@ from mygooglealertpapers.logging_utils import configure_logging
 from mygooglealertpapers.pipeline.ingest import parse_and_extract_candidates, scan_and_store_messages
 from mygooglealertpapers.pipeline.local_import import import_local_body_snapshots, validate_local_body_input
 from mygooglealertpapers.pipeline.normalize import normalize_candidates
+from mygooglealertpapers.pipeline.candidate_resolution import resolve_candidates_against_library
 from mygooglealertpapers.pipeline.enrich import enrich_candidates
 from mygooglealertpapers.pipeline.enrichment_plan import build_enrichment_plan
 from mygooglealertpapers.pipeline.enrich_stats import build_enrichment_stats
@@ -60,6 +61,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     normalize_parser = subparsers.add_parser("normalize-candidates", help="Normalize extracted candidates")
     normalize_parser.add_argument("--limit", type=int, default=100)
+
+    resolve_parser = subparsers.add_parser("resolve-candidates", help="Prelink normalized candidates against the existing canonical library before provider enrich")
+    resolve_parser.add_argument("--limit", type=int, default=100)
 
     subparsers.add_parser("report-batch", help="Show a lightweight batch report")
     enrichment_plan_parser = subparsers.add_parser("report-enrichment-plan", help="Show the current enrichment-intent shape and dedup opportunities")
@@ -140,6 +144,8 @@ def main() -> None:
         print(manifest)
     elif args.command == "normalize-candidates":
         normalize_candidates(settings, limit=args.limit)
+    elif args.command == "resolve-candidates":
+        print(resolve_candidates_against_library(settings, limit=args.limit))
     elif args.command == "report-batch":
         print(build_batch_report(settings.sqlite_path))
     elif args.command == "report-enrichment-plan":

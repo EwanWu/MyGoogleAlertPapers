@@ -19,6 +19,8 @@ Read these first when you want the current project state, current default flow, 
 9. `docs/validation/mainline-summary-20260422_mainline.md`
 10. `docs/validation/day5-provider-lane-ablation-120-20260429.md`
 11. `docs/validation/day5-identifier-plus-title-core-live150-20260429.md`
+12. `docs/16-duplicate-provider-query-elimination-plan-2026-04-29.md`
+13. `docs/17-phase1-library-prelink-implementation-and-ablation-2026-04-29.md`
 
 ### Current active decision layer
 
@@ -31,12 +33,16 @@ Read these first when you want the current project state, current default flow, 
 - `docs/validation/mainline-summary-20260422_mainline.md`
 - `docs/validation/day5-provider-lane-ablation-120-20260429.md`
 - `docs/validation/day5-identifier-plus-title-core-live150-20260429.md`
+- `docs/16-duplicate-provider-query-elimination-plan-2026-04-29.md`
+- `docs/17-phase1-library-prelink-implementation-and-ablation-2026-04-29.md`
 
 ### Current runtime / provider-lane validation
 
 - `docs/validation/day5-provider-lane-ablation-120-20260429.md` — current runtime-lane memo covering lane gating, the first budgeted title-core stop-condition replay, and the live150 follow-up decision
 - `docs/validation/day5-identifier-plus-title-core-live150-20260429.md` — closest-to-production slice150 live replay for the promoted synchronous lane profile; confirms clean enrich→merge→dedup completion without reopening slow fallback lanes
-- code/runtime note: the builtin CLI default and baseline helper default are now aligned to `openalex_batching_identifier_plus_title_core`, so runs without an explicit `MGAP_POLICY_PROFILE` no longer fall back to the older full-provider synchronous default
+- `docs/16-duplicate-provider-query-elimination-plan-2026-04-29.md` — analysis + staged blueprint for suppressing repeated provider queries via exact library prelink, same-batch candidate clustering, and stronger article-identity aliases above the current query-cache layer
+- `docs/17-phase1-library-prelink-implementation-and-ablation-2026-04-29.md` — implementation archive + live control/treatment evidence showing that exact library-first prelink is now a proven, fixed workstream rather than a speculative idea
+- code/runtime note: the builtin CLI default and baseline helper default are now aligned to `openalex_batching_identifier_plus_title_core`, and the runtime layer now also enables exact `library_prelink` by default before provider fanout
 
 ### Current operations / data-acquisition validation
 

@@ -1,4 +1,4 @@
-# Project phase map and current status (updated 2026-04-27)
+# Project phase map and current status (updated 2026-04-29)
 
 ## Purpose
 
@@ -14,9 +14,9 @@ Read this first if you need the shortest path to:
 
 The project is now in:
 
-> **default-flow operational hardening / request-scheduling optimization promotion**
+> **default-flow operational hardening / request-scheduling optimization promotion with exact library-first prelink now active**
 
-The pipeline is no longer mainly exploring strategy space. The current work is about locking one coherent default path, hardening the operator/runtime boundary around it, and only promoting narrow request-efficiency optimizations after deterministic replay evidence.
+The pipeline is no longer mainly exploring strategy space. The current work is about locking one coherent default path, hardening the operator/runtime boundary around it, and only promoting narrow request-efficiency optimizations after deterministic replay evidence. As of 2026-04-29, this now includes an active exact library-first prelink layer above provider dispatch rather than treating duplicate-query elimination as a future-only idea.
 
 ## Current default pipeline
 
@@ -32,6 +32,7 @@ Operationally:
 7. `enrich-paper-oa`
 
 Runtime defaults now additionally assume:
+- exact library-first prelink before provider fanout
 - safe dispatch dedup
 - context-aware enrichment cache keys
 - OpenAlex DOI batching
@@ -90,6 +91,7 @@ The current runtime-default additions are justified by a smaller but decision-gr
 - `docs/validation/recorded_deterministic_ab_medium60_20260427.md`
 - `docs/validation/day5-provider-lane-ablation-120-20260429.md`
 - `docs/validation/day5-identifier-plus-title-core-live150-20260429.md`
+- `docs/17-phase1-library-prelink-implementation-and-ablation-2026-04-29.md`
 
 What these established:
 - Day 2 operator-boundary hardening is in place and regression-tested
@@ -98,6 +100,7 @@ What these established:
 - explicit runtime lane gating is now viable: `identifier_fastpath` is a stable live core, and `identifier_fastpath + title_core` has now completed a closer-to-production slice150 live replay cleanly enough to justify promotion as the recommended synchronous default profile
 - that promotion is no longer only documentary: the builtin CLI default and baseline helper default have been rebound to the `identifier_fastpath + title_core` profile, so default runs now execute the staged live path rather than the older full-provider synchronous fanout
 - explicit per-lane stop conditions are now also viable: a budget-capped `title_core` run stops cleanly, records its stop reason in dispatch stats, and yields a controllable coverage/runtime tradeoff instead of a timeout boundary
+- exact duplicate-query elimination has now crossed from blueprint to implementation for Phase 1: the runtime performs exact library-first prelink before provider dispatch, and live control/treatment evidence shows the operator-visible cost delta is large enough to justify making this the fixed next-stage workstream
 
 ## Active document set to read now
 
@@ -113,28 +116,33 @@ What these established:
 10. `docs/validation/trackA-author-blob-fb-decision-20260421c.md`
 11. `docs/validation/trackB-unpaywall-decision-memo-20260422.md`
 12. `docs/validation/mainline-summary-20260422_mainline.md`
+13. `docs/17-phase1-library-prelink-implementation-and-ablation-2026-04-29.md`
 
 ## What is still open
 
-The main unresolved problem is no longer whether staged live lanes are viable. That part is now established. The current unresolved problem is **how to keep the promoted `identifier_fastpath + title_core` default fast enough under wider live bursts, mainly by controlling `crossref` title-lane cost and budget shape**.
+The main unresolved problem is no longer whether staged live lanes are viable, nor whether exact library-first prelink is worth implementing. Both are now established. The current unresolved problem is **how to combine exact prelink, same-batch clustering, and lane-level runtime control so the promoted `identifier_fastpath + title_core` default stays fast under wider live bursts, mainly by shrinking residual `crossref` title-lane cost**.
 
 The next useful validation is:
 - preserve the current promoted mainline/runtime defaults
-- use `identifier_fastpath + title_core` as the recommended synchronous live default profile
+- keep exact `library_prelink` enabled as the new first-layer short-circuit
+- use `identifier_fastpath + title_core` as the recommended synchronous live default profile for unresolved candidates
 - keep `biomedical_fallback` and `slow_fallback` outside the synchronous default path until separately budgeted
-- tune `title_core` budget shape and prioritize request-reduction inside that lane, especially `crossref` title cost, while keeping judgment on fixed-seed replay
+- implement same-batch candidate clustering as the next duplicate-suppression layer after exact prelink
+- continue tuning `title_core` budget shape and residual `crossref` title cost while keeping judgment on fixed-seed replay
 
 ## Immediate next-step direction
 
-The most promising next phase is no longer broad policy exploration. It is **runtime hardening of the promoted synchronous lane default**.
+The most promising next phase is no longer broad policy exploration. It is **runtime hardening of the promoted synchronous lane default plus article-level duplicate suppression above provider fanout**.
 
 Recommended order:
-1. keep `identifier_fastpath` as the guaranteed live base lane
-2. keep `identifier_fastpath + title_core` as the promoted synchronous default profile
-3. optimize the `title_core` lane, with special focus on `crossref` title cost
-4. tune explicit lane budgets / stop conditions as degraded-safe modes before attempting provider concurrency
-5. keep every new scheduling optimization behind fixed-seed replay and, when needed, recorded-payload replay
-6. avoid changing match standards unless a new correctness problem appears
+1. keep exact `library_prelink` as the first short-circuit layer
+2. keep `identifier_fastpath` as the guaranteed live base lane for unresolved candidates
+3. keep `identifier_fastpath + title_core` as the promoted synchronous default profile
+4. implement same-batch candidate clustering so repeated same-article candidates collapse before provider fanout
+5. optimize the residual `title_core` lane, with special focus on `crossref` title cost
+6. tune explicit lane budgets / stop conditions as degraded-safe modes before attempting provider concurrency
+7. keep every new scheduling optimization behind fixed-seed replay and, when needed, recorded-payload replay
+8. avoid changing match standards unless a new correctness problem appears
 
 ## What should not be reopened casually
 

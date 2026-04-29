@@ -209,6 +209,30 @@ CREATE TABLE IF NOT EXISTS candidate_paper_link (
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS candidate_resolution_status (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    candidate_id TEXT NOT NULL,
+    resolution_stage TEXT NOT NULL,
+    resolution_rule TEXT,
+    paper_id TEXT,
+    leader_candidate_id TEXT,
+    status TEXT NOT NULL,
+    evidence_json TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS paper_identity_alias (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    paper_id TEXT NOT NULL,
+    alias_type TEXT NOT NULL,
+    alias_key TEXT NOT NULL,
+    confidence REAL,
+    source_stage TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS merge_review_queue (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     candidate_id TEXT NOT NULL UNIQUE,
@@ -291,6 +315,15 @@ ON merged_metadata_proposal(candidate_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_candidate_paper_link_candidate_paper_relation
 ON candidate_paper_link(candidate_id, paper_id, relation_type);
 
+CREATE UNIQUE INDEX IF NOT EXISTS idx_candidate_resolution_status_candidate_id
+ON candidate_resolution_status(candidate_id);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_paper_identity_alias_type_key
+ON paper_identity_alias(alias_type, alias_key);
+
+CREATE INDEX IF NOT EXISTS idx_paper_identity_alias_paper_id
+ON paper_identity_alias(paper_id);
+
 CREATE UNIQUE INDEX IF NOT EXISTS idx_canonical_paper_doi_nonempty
 ON canonical_paper(canonical_doi)
 WHERE canonical_doi IS NOT NULL AND TRIM(canonical_doi) != '';
@@ -302,6 +335,33 @@ WHERE canonical_pmid IS NOT NULL AND TRIM(canonical_pmid) != '';
 CREATE UNIQUE INDEX IF NOT EXISTS idx_canonical_paper_pmcid_nonempty
 ON canonical_paper(canonical_pmcid)
 WHERE canonical_pmcid IS NOT NULL AND TRIM(canonical_pmcid) != '';
+
+CREATE INDEX IF NOT EXISTS idx_pcn_doi_extracted_nonempty
+ON paper_candidate_normalized(doi_extracted)
+WHERE doi_extracted IS NOT NULL AND TRIM(doi_extracted) != '';
+
+CREATE INDEX IF NOT EXISTS idx_pcn_pmid_extracted_nonempty
+ON paper_candidate_normalized(pmid_extracted)
+WHERE pmid_extracted IS NOT NULL AND TRIM(pmid_extracted) != '';
+
+CREATE INDEX IF NOT EXISTS idx_pcn_pmcid_extracted_nonempty
+ON paper_candidate_normalized(pmcid_extracted)
+WHERE pmcid_extracted IS NOT NULL AND TRIM(pmcid_extracted) != '';
+
+CREATE INDEX IF NOT EXISTS idx_pcn_arxiv_extracted_nonempty
+ON paper_candidate_normalized(arxiv_id_extracted)
+WHERE arxiv_id_extracted IS NOT NULL AND TRIM(arxiv_id_extracted) != '';
+
+CREATE INDEX IF NOT EXISTS idx_pcn_scholar_cluster_nonempty
+ON paper_candidate_normalized(scholar_cluster_hint)
+WHERE scholar_cluster_hint IS NOT NULL AND TRIM(scholar_cluster_hint) != '';
+
+CREATE INDEX IF NOT EXISTS idx_pcn_url_canonical_nonempty
+ON paper_candidate_normalized(url_canonical)
+WHERE url_canonical IS NOT NULL AND TRIM(url_canonical) != '';
+
+CREATE INDEX IF NOT EXISTS idx_pcn_title_author_year
+ON paper_candidate_normalized(norm_title_key, first_author_family, year_guess);
 """
 
 

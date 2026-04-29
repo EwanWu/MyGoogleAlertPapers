@@ -95,6 +95,7 @@ def _default_policy_profile() -> PolicyProfile:
         'runtime_rules': {
             'lane_order': ['identifier_fastpath', 'title_core', 'biomedical_fallback', 'slow_fallback'],
             'enabled_lanes': ['identifier_fastpath', 'title_core'],
+            'library_prelink_enabled': True,
         },
         'replay_defaults': {
             'stages': ['enrich', 'merge', 'dedup'],

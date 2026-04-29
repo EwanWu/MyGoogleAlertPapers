@@ -1,0 +1,49 @@
+profile_name: openalex_batching_identifier_plus_title_core_no_library_prelink
+summary: >
+  Control profile for Phase 1 experiments. Same provider-lane shape as the promoted
+  synchronous default, but disables exact library-first prelink so provider-cost
+  deltas can be measured directly.
+notes:
+  - Keep current conditional_sources_v2_author_blob_fallback_only merge behavior
+  - Keep identifier_fastpath + title_core lane shape
+  - Disable library-first prelink for control-vs-treatment experiments
+provider_rules:
+  crossref:
+    enabled: true
+    title_payload_reuse_enabled: true
+  openalex:
+    enabled: true
+    doi_batch_enabled: true
+    title_payload_reuse_enabled: true
+  semanticscholar:
+    enabled: true
+    title_payload_reuse_enabled: true
+  pubmed:
+    enabled: true
+    fallback_only_for_core_fields: true
+  europepmc:
+    enabled: true
+    trigger_mode: narrowed_biomedical_fallback
+  arxiv:
+    enabled: true
+    trigger_mode: arxiv_native_only
+merge_rules:
+  pubmed_title_doi_suppression: true
+  normalized_only_fallback: true
+  fallback_reject_author_blob_identifier_aware: true
+runtime_rules:
+  lane_order:
+    - identifier_fastpath
+    - title_core
+    - biomedical_fallback
+    - slow_fallback
+  enabled_lanes:
+    - identifier_fastpath
+    - title_core
+  library_prelink_enabled: false
+replay_defaults:
+  stages:
+    - normalize
+    - enrich
+    - merge
+    - dedup
