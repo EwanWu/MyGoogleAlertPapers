@@ -10,11 +10,16 @@ from mygooglealertpapers.enrich.base import EnrichmentRecord
 from mygooglealertpapers.pipeline.enrich import enrich_candidates
 
 
-def _make_settings(db_path: Path) -> Settings:
+def _make_settings(
+    db_path: Path,
+    *,
+    provider_rules: dict[str, dict[str, object]] | None = None,
+    runtime_rules: dict[str, object] | None = None,
+) -> Settings:
     profile = PolicyProfile(
         name='test_profile',
         path=None,
-        provider_rules={
+        provider_rules=provider_rules or {
             'crossref': {'enabled': True},
             'openalex': {'enabled': False},
             'semanticscholar': {'enabled': False},
@@ -24,6 +29,7 @@ def _make_settings(db_path: Path) -> Settings:
             'unpaywall': {'enabled': False},
         },
         merge_rules={},
+        runtime_rules=runtime_rules or {},
         replay_defaults={},
         raw={},
     )
@@ -355,3 +361,129 @@ def test_experimental_title_payload_reuse_shares_request_without_relaxing_match(
         assert stats['shared_title_reuse_intent_count'] == 2
         assert stats['shared_title_reuse_request_count'] == 1
         assert stats['shared_title_reuse_request_savings'] == 1
+
+
+def test_enrich_candidates_identifier_fastpath_lane_filters_slow_title_fallbacks(tmp_path: Path, monkeypatch):
+    db_path = tmp_path / 'mgap.db'
+    create_schema_at_default_path(db_path)
+    settings = _make_settings(
+        db_path,
+        provider_rules={
+            'crossref': {'enabled': True},
+            'openalex': {'enabled': False},
+            'semanticscholar': {'enabled': True},
+            'pubmed': {'enabled': True},
+            'europepmc': {'enabled': False},
+            'arxiv': {'enabled': False},
+            'unpaywall': {'enabled': False},
+        },
+        runtime_rules={
+            'enabled_lanes': ['identifier_fastpath'],
+        },
+    )
+
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            '''
+            INSERT INTO paper_candidate_normalized (
+                candidate_id, norm_title, norm_title_key, doi_extracted, pmid_extracted,
+                first_author_family, venue_guess, year_guess
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''',
+            ('cand_lane', 'Lane Controlled Paper', 'lane controlled paper', '10.1000/lane', '123456', 'Wu', 'Nature', '2026'),
+        )
+        conn.commit()
+
+    calls = {'crossref': 0, 'pubmed': 0, 'semanticscholar': 0}
+
+    def fake_query_crossref(candidate_id: str, **kwargs):
+        calls['crossref'] += 1
+        return EnrichmentRecord(
+            candidate_id=candidate_id,
+            source_name='crossref',
+            query_type='doi',
+            query_string='10.1000/lane',
+            matched=True,
+            match_score=1.0,
+            external_id='crossref:lane',
+            title='Lane Controlled Paper',
+            authors_json=json.dumps(['Yue Wu'], ensure_ascii=False),
+            abstract=None,
+            venue='Nature',
+            year='2026',
+            publication_type='journal-article',
+            doi='10.1000/lane',
+            pmid='123456',
+            pmcid=None,
+            url='https://doi.org/10.1000/lane',
+            raw_payload_json=json.dumps({'status': 'ok'}, ensure_ascii=False),
+            latency_ms=11,
+        )
+
+    def fake_query_pubmed(candidate_id: str, **kwargs):
+        calls['pubmed'] += 1
+        return EnrichmentRecord(
+            candidate_id=candidate_id,
+            source_name='pubmed',
+            query_type='pmid',
+            query_string='123456',
+            matched=True,
+            match_score=1.0,
+            external_id='pubmed:123456',
+            title='Lane Controlled Paper',
+            authors_json=json.dumps(['Yue Wu'], ensure_ascii=False),
+            abstract=None,
+            venue='Nature',
+            year='2026',
+            publication_type='journal-article',
+            doi='10.1000/lane',
+            pmid='123456',
+            pmcid=None,
+            url='https://pubmed.ncbi.nlm.nih.gov/123456/',
+            raw_payload_json=json.dumps({'status': 'ok'}, ensure_ascii=False),
+            latency_ms=7,
+        )
+
+    def fake_query_semanticscholar(candidate_id: str, **kwargs):
+        calls['semanticscholar'] += 1
+        return EnrichmentRecord(
+            candidate_id=candidate_id,
+            source_name='semanticscholar',
+            query_type='doi',
+            query_string='10.1000/lane',
+            matched=True,
+            match_score=1.0,
+            external_id='s2:lane',
+            title='Lane Controlled Paper',
+            authors_json=json.dumps(['Yue Wu'], ensure_ascii=False),
+            abstract=None,
+            venue='Nature',
+            year='2026',
+            publication_type='journal-article',
+            doi='10.1000/lane',
+            pmid='123456',
+            pmcid=None,
+            url='https://api.semanticscholar.org/lane',
+            raw_payload_json=json.dumps({'status': 'ok'}, ensure_ascii=False),
+            latency_ms=99,
+        )
+
+    monkeypatch.setattr('mygooglealertpapers.pipeline.enrich.query_crossref', fake_query_crossref)
+    monkeypatch.setattr('mygooglealertpapers.pipeline.enrich.query_pubmed', fake_query_pubmed)
+    monkeypatch.setattr('mygooglealertpapers.pipeline.enrich.query_semanticscholar', fake_query_semanticscholar)
+
+    enrich_candidates(settings, limit=10)
+
+    assert calls == {'crossref': 1, 'pubmed': 1, 'semanticscholar': 0}
+    with sqlite3.connect(db_path) as conn:
+        providers = conn.execute(
+            'SELECT provider FROM candidate_enrichment_status ORDER BY provider'
+        ).fetchall()
+        assert providers == [('crossref',), ('pubmed',)]
+        notes = conn.execute(
+            "SELECT notes FROM batch_run WHERE stage = 'enrich_candidates' ORDER BY id DESC LIMIT 1"
+        ).fetchone()[0]
+        stats = json.loads(notes)
+        assert stats['enabled_lanes'] == ['identifier_fastpath']
+        assert stats['lane_group_counts'] == {'identifier_fastpath': 2}
+        assert stats['lane_processed_intents'] == {'identifier_fastpath': 2}

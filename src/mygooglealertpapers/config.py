@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from dotenv import dotenv_values, load_dotenv
@@ -13,8 +13,9 @@ class PolicyProfile:
     path: Path | None
     provider_rules: dict[str, dict[str, object]]
     merge_rules: dict[str, object]
-    replay_defaults: dict[str, object]
-    raw: dict[str, object]
+    runtime_rules: dict[str, object] = field(default_factory=dict)
+    replay_defaults: dict[str, object] = field(default_factory=dict)
+    raw: dict[str, object] = field(default_factory=dict)
 
     def provider_enabled(self, provider: str, default: bool = True) -> bool:
         rule = self.provider_rules.get(provider) or {}
@@ -27,6 +28,9 @@ class PolicyProfile:
 
     def merge_value(self, key: str, default: object = None) -> object:
         return self.merge_rules.get(key, default)
+
+    def runtime_value(self, key: str, default: object = None) -> object:
+        return self.runtime_rules.get(key, default)
 
 
 @dataclass(slots=True)
@@ -87,6 +91,9 @@ def _default_policy_profile() -> PolicyProfile:
             'pubmed_title_doi_suppression': True,
             'normalized_only_fallback': False,
         },
+        'runtime_rules': {
+            'lane_order': ['identifier_fastpath', 'title_core', 'biomedical_fallback', 'slow_fallback'],
+        },
         'replay_defaults': {
             'stages': ['enrich', 'merge', 'dedup'],
         },
@@ -96,6 +103,7 @@ def _default_policy_profile() -> PolicyProfile:
         path=None,
         provider_rules=dict(raw['provider_rules']),
         merge_rules=dict(raw['merge_rules']),
+        runtime_rules=dict(raw['runtime_rules']),
         replay_defaults=dict(raw['replay_defaults']),
         raw=raw,
     )
@@ -125,6 +133,9 @@ def _load_policy_profile(path_value: str | None) -> PolicyProfile:
     merge_rules = dict(default_profile.merge_rules)
     merge_rules.update((raw.get('merge_rules') or {}))
 
+    runtime_rules = dict(default_profile.runtime_rules)
+    runtime_rules.update((raw.get('runtime_rules') or {}))
+
     replay_defaults = dict(default_profile.replay_defaults)
     replay_defaults.update((raw.get('replay_defaults') or {}))
 
@@ -133,6 +144,7 @@ def _load_policy_profile(path_value: str | None) -> PolicyProfile:
         path=path,
         provider_rules=provider_rules,
         merge_rules=merge_rules,
+        runtime_rules=runtime_rules,
         replay_defaults=replay_defaults,
         raw=raw,
     )

@@ -17,6 +17,7 @@ Read these first when you want the current project state, current default flow, 
 7. `docs/validation/trackA-author-blob-fb-decision-20260421c.md`
 8. `docs/validation/trackB-unpaywall-decision-memo-20260422.md` — ✅ **COMPLETED 2026-04-22**
 9. `docs/validation/mainline-summary-20260422_mainline.md`
+10. `docs/validation/day5-provider-lane-ablation-120-20260429.md`
 
 ### Current active decision layer
 
@@ -27,6 +28,11 @@ Read these first when you want the current project state, current default flow, 
 - `docs/validation/trackA-author-blob-fb-decision-20260421c.md`
 - `docs/validation/trackB-unpaywall-decision-memo-20260422.md`
 - `docs/validation/mainline-summary-20260422_mainline.md`
+- `docs/validation/day5-provider-lane-ablation-120-20260429.md`
+
+### Current runtime / provider-lane validation
+
+- `docs/validation/day5-provider-lane-ablation-120-20260429.md` — first explicit runtime-lane ablation showing that `identifier_fastpath` is a safe live core and `identifier_fastpath + title_core` stays inside a practical slice120 runtime budget, while slow fallback lanes remain the defer target
 
 ### Current operations / data-acquisition validation
 

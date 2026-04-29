@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 
 PROGRESS_EVERY = 25
 IDENTIFIER_QUERY_TYPES = {'doi', 'doi_batch', 'pmid', 'pmcid', 'arxiv_id'}
+DEFAULT_LANE_ORDER = ['identifier_fastpath', 'title_core', 'biomedical_fallback', 'slow_fallback']
 
 
 @dataclass(slots=True)
@@ -95,6 +96,79 @@ def _provider_enabled(settings: Settings, provider: str, default: bool = True) -
 
 def _provider_value(settings: Settings, provider: str, key: str, default: object = None) -> object:
     return settings.policy_profile.provider_value(provider, key, default)
+
+
+def _runtime_value(settings: Settings, key: str, default: object = None) -> object:
+    return settings.policy_profile.runtime_value(key, default)
+
+
+def _lane_for_group(group: DispatchGroup) -> str:
+    provider = group.provider
+    query_type = group.query_type
+    if provider == 'semanticscholar':
+        return 'slow_fallback'
+    if query_type in IDENTIFIER_QUERY_TYPES:
+        return 'identifier_fastpath'
+    if provider in {'crossref', 'openalex', 'arxiv'}:
+        return 'title_core'
+    if provider in {'pubmed', 'europepmc'}:
+        return 'biomedical_fallback'
+    return 'slow_fallback'
+
+
+def _lane_order(settings: Settings) -> list[str]:
+    value = _runtime_value(settings, 'lane_order', DEFAULT_LANE_ORDER)
+    if isinstance(value, list) and value:
+        return [str(x) for x in value]
+    return list(DEFAULT_LANE_ORDER)
+
+
+def _enabled_lanes(settings: Settings) -> set[str] | None:
+    value = _runtime_value(settings, 'enabled_lanes', None)
+    if value in (None, [], ()):
+        return None
+    if isinstance(value, (list, tuple, set)):
+        return {str(x) for x in value}
+    return {str(value)}
+
+
+def _prepare_dispatch_groups(settings: Settings, runnable_intents: list[ProviderIntent]) -> tuple[list[DispatchGroup], dict[str, int], dict[str, int]]:
+    base_groups = _build_dispatch_groups(settings, runnable_intents)
+    enabled_lanes = _enabled_lanes(settings)
+    lane_order = _lane_order(settings)
+    known_lanes = list(dict.fromkeys([*lane_order, *DEFAULT_LANE_ORDER]))
+    lane_groups: dict[str, list[DispatchGroup]] = {lane: [] for lane in known_lanes}
+
+    for group in base_groups:
+        lane = _lane_for_group(group)
+        if enabled_lanes is not None and lane not in enabled_lanes:
+            continue
+        lane_groups.setdefault(lane, []).append(group)
+
+    ordered_groups: list[DispatchGroup] = []
+    seen_lanes: set[str] = set()
+    for lane in lane_order:
+        ordered_groups.extend(lane_groups.get(lane, []))
+        seen_lanes.add(lane)
+    for lane, groups in lane_groups.items():
+        if lane in seen_lanes:
+            continue
+        ordered_groups.extend(groups)
+
+    lane_group_counts = {lane: len(groups) for lane, groups in lane_groups.items() if groups}
+    lane_intent_counts = {lane: sum(len(group.intents) for group in groups) for lane, groups in lane_groups.items() if groups}
+    return ordered_groups, lane_group_counts, lane_intent_counts
+
+
+def _bump_lane_processed(dispatch_stats: dict[str, object], group: DispatchGroup, delta: int) -> None:
+    lane = _lane_for_group(group)
+    lane_processed = dispatch_stats.setdefault('lane_processed_intents', {})
+    lane_processed[lane] = int(lane_processed.get(lane, 0) or 0) + delta
+
+
+def _bump_lane_request(dispatch_stats: dict[str, object], lane: str, delta: int = 1) -> None:
+    lane_requests = dispatch_stats.setdefault('lane_dispatch_request_count', {})
+    lane_requests[lane] = int(lane_requests.get(lane, 0) or 0) + delta
 
 
 def _build_provider_intents(settings: Settings, row) -> list[ProviderIntent]:
@@ -453,12 +527,13 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
             all_intents.extend(_build_provider_intents(settings, row))
 
         runnable_intents = [intent for intent in all_intents if _should_run_provider(repo, conn, intent)]
-        dispatch_groups = _build_dispatch_groups(settings, runnable_intents)
+        dispatch_groups, lane_group_counts, lane_intent_counts = _prepare_dispatch_groups(settings, runnable_intents)
         logger.info(
-            'Planned %s provider intent(s); %s need work; %s dispatch group(s) after safe dedup',
+            'Planned %s provider intent(s); %s need work; %s dispatch group(s) after safe dedup; lanes=%s',
             len(all_intents),
             len(runnable_intents),
             len(dispatch_groups),
+            lane_group_counts,
         )
 
         openalex_doi_batch_enabled = bool(_provider_value(settings, 'openalex', 'doi_batch_enabled', True))
@@ -466,6 +541,12 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
             'planned_provider_intents': len(all_intents),
             'runnable_provider_intents': len(runnable_intents),
             'dispatch_group_count': len(dispatch_groups),
+            'lane_order': _lane_order(settings),
+            'enabled_lanes': sorted(_enabled_lanes(settings)) if _enabled_lanes(settings) is not None else None,
+            'lane_group_counts': lane_group_counts,
+            'lane_intent_counts': lane_intent_counts,
+            'lane_processed_intents': {lane: 0 for lane in lane_intent_counts},
+            'lane_dispatch_request_count': {lane: 0 for lane in lane_group_counts},
             'openalex_batch_request_count': 0,
             'non_batch_dispatch_request_count': 0,
             'cache_hit_group_count': 0,
@@ -496,13 +577,16 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
             for i in range(0, len(doi_values), 50):
                 chunk = doi_values[i:i + 50]
                 dispatch_stats['openalex_batch_request_count'] += 1
+                _bump_lane_request(dispatch_stats, 'identifier_fastpath')
                 logger.info('OpenAlex DOI batch chunk %s-%s / %s DOI(s)', i + 1, i + len(chunk), len(doi_values))
                 try:
                     results = query_openalex_batch_by_doi(chunk, email=settings.openalex_email)
                 except Exception as exc:
                     for doi_val in chunk:
                         group = doi_to_group[doi_val]
-                        processed_intents += _fanout_error_to_group(repo, tracker, conn, group, error_summary=str(exc), notes='doi_batch_error')
+                        delta = _fanout_error_to_group(repo, tracker, conn, group, error_summary=str(exc), notes='doi_batch_error')
+                        processed_intents += delta
+                        _bump_lane_processed(dispatch_stats, group, delta)
                         handled_group_keys.add((group.provider, group.query_type, group.query_key))
                     continue
 
@@ -539,7 +623,9 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
                         latency_ms=0,
                     )
                     repo.put_query_cache(conn, provider='openalex', query_type='doi', query_key=doi_val, response_json=enrichment_record_to_json(rec), **cache_metadata_from_record(rec, field_set_hash=_group_field_set_hash(group)))
-                    processed_intents += _fanout_result_to_group(repo, tracker, conn, group, rec, cache_hit=False, notes='doi_batch')
+                    delta = _fanout_result_to_group(repo, tracker, conn, group, rec, cache_hit=False, notes='doi_batch')
+                    processed_intents += delta
+                    _bump_lane_processed(dispatch_stats, group, delta)
                     handled_group_keys.add((group.provider, group.query_type, group.query_key))
 
                 for doi_val in chunk:
@@ -569,7 +655,9 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
                         latency_ms=0,
                     )
                     repo.put_query_cache(conn, provider='openalex', query_type='doi', query_key=doi_val, response_json=enrichment_record_to_json(rec), **cache_metadata_from_record(rec, field_set_hash=_group_field_set_hash(group)))
-                    processed_intents += _fanout_result_to_group(repo, tracker, conn, group, rec, cache_hit=False, notes='doi_batch_no_match')
+                    delta = _fanout_result_to_group(repo, tracker, conn, group, rec, cache_hit=False, notes='doi_batch_no_match')
+                    processed_intents += delta
+                    _bump_lane_processed(dispatch_stats, group, delta)
                     handled_group_keys.add((group.provider, group.query_type, group.query_key))
                 _persist_dispatch_progress(repo, conn, run_id=run_id, started_at=started_at, processed_intents=processed_intents, dispatch_stats=dispatch_stats)
                 conn.commit()
@@ -592,12 +680,15 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
             field_set_hash = _group_field_set_hash(group)
             cached = repo.get_query_cache(conn, provider=group.provider, query_type=group.query_type, query_key=group.query_key, field_set_hash=field_set_hash)
             dispatch_stats['non_batch_dispatch_request_count'] += 1
+            _bump_lane_request(dispatch_stats, _lane_for_group(group))
             if cached:
                 cached_rec = enrichment_record_from_json(cached[0])
                 if cache_status_from_record(cached_rec) != 'transient_error':
                     dispatch_stats['cache_hit_group_count'] += 1
                     rec = _record_from_cache(group.representative, cached[0])
-                    processed_intents += _fanout_result_to_group(repo, tracker, conn, group, rec, cache_hit=True)
+                    delta = _fanout_result_to_group(repo, tracker, conn, group, rec, cache_hit=True)
+                    processed_intents += delta
+                    _bump_lane_processed(dispatch_stats, group, delta)
                     if processed_intents % PROGRESS_EVERY == 0:
                         logger.info('Enrich progress: processed %s / %s runnable intent(s)', processed_intents, len(runnable_intents))
                         _persist_dispatch_progress(repo, conn, run_id=run_id, started_at=started_at, processed_intents=processed_intents, dispatch_stats=dispatch_stats)
@@ -632,7 +723,9 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
                         latency_ms=0,
                     )
                     repo.put_query_cache(conn, provider=group.provider, query_type=group.query_type, query_key=group.query_key, response_json=enrichment_record_to_json(rec), **cache_metadata_from_record(rec, field_set_hash=field_set_hash))
-                    processed_intents += _fanout_error_to_group(repo, tracker, conn, group, error_summary=str(exc), notes='shared_title_reuse_error')
+                    delta = _fanout_error_to_group(repo, tracker, conn, group, error_summary=str(exc), notes='shared_title_reuse_error')
+                    processed_intents += delta
+                    _bump_lane_processed(dispatch_stats, group, delta)
                     if processed_intents % PROGRESS_EVERY == 0:
                         logger.info('Enrich progress: processed %s / %s runnable intent(s)', processed_intents, len(runnable_intents))
                         _persist_dispatch_progress(repo, conn, run_id=run_id, started_at=started_at, processed_intents=processed_intents, dispatch_stats=dispatch_stats)
@@ -653,7 +746,9 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
                             response_json=enrichment_record_to_json(rec),
                             **cache_metadata_from_record(rec, field_set_hash=_cache_field_set_hash(intent)),
                         )
-                    processed_intents += _fanout_records_to_group(repo, tracker, conn, group, records, cache_hit=False, notes='shared_title_reuse')
+                    delta = _fanout_records_to_group(repo, tracker, conn, group, records, cache_hit=False, notes='shared_title_reuse')
+                    processed_intents += delta
+                    _bump_lane_processed(dispatch_stats, group, delta)
                     if processed_intents % PROGRESS_EVERY == 0:
                         logger.info('Enrich progress: processed %s / %s runnable intent(s)', processed_intents, len(runnable_intents))
                         _persist_dispatch_progress(repo, conn, run_id=run_id, started_at=started_at, processed_intents=processed_intents, dispatch_stats=dispatch_stats)
@@ -686,7 +781,9 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
                     latency_ms=0,
                 )
                 repo.put_query_cache(conn, provider=group.provider, query_type=group.query_type, query_key=group.query_key, response_json=enrichment_record_to_json(rec), **cache_metadata_from_record(rec, field_set_hash=field_set_hash))
-                processed_intents += _fanout_error_to_group(repo, tracker, conn, group, error_summary=str(exc))
+                delta = _fanout_error_to_group(repo, tracker, conn, group, error_summary=str(exc))
+                processed_intents += delta
+                _bump_lane_processed(dispatch_stats, group, delta)
                 if processed_intents % PROGRESS_EVERY == 0:
                     logger.info('Enrich progress: processed %s / %s runnable intent(s)', processed_intents, len(runnable_intents))
                     _persist_dispatch_progress(repo, conn, run_id=run_id, started_at=started_at, processed_intents=processed_intents, dispatch_stats=dispatch_stats)
@@ -717,7 +814,9 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
                     latency_ms=0,
                 )
                 repo.put_query_cache(conn, provider=group.provider, query_type=group.query_type, query_key=group.query_key, response_json=enrichment_record_to_json(rec), **cache_metadata_from_record(rec, field_set_hash=field_set_hash))
-                processed_intents += _fanout_result_to_group(repo, tracker, conn, group, rec, cache_hit=False, notes='no_record_returned')
+                delta = _fanout_result_to_group(repo, tracker, conn, group, rec, cache_hit=False, notes='no_record_returned')
+                processed_intents += delta
+                _bump_lane_processed(dispatch_stats, group, delta)
                 if processed_intents % PROGRESS_EVERY == 0:
                     logger.info('Enrich progress: processed %s / %s runnable intent(s)', processed_intents, len(runnable_intents))
                     _persist_dispatch_progress(repo, conn, run_id=run_id, started_at=started_at, processed_intents=processed_intents, dispatch_stats=dispatch_stats)
@@ -725,7 +824,9 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
                 continue
 
             repo.put_query_cache(conn, provider=group.provider, query_type=group.query_type, query_key=group.query_key, response_json=enrichment_record_to_json(rec), **cache_metadata_from_record(rec, field_set_hash=field_set_hash))
-            processed_intents += _fanout_result_to_group(repo, tracker, conn, group, rec, cache_hit=False)
+            delta = _fanout_result_to_group(repo, tracker, conn, group, rec, cache_hit=False)
+            processed_intents += delta
+            _bump_lane_processed(dispatch_stats, group, delta)
             if processed_intents % PROGRESS_EVERY == 0:
                 logger.info('Enrich progress: processed %s / %s runnable intent(s)', processed_intents, len(runnable_intents))
                 _persist_dispatch_progress(repo, conn, run_id=run_id, started_at=started_at, processed_intents=processed_intents, dispatch_stats=dispatch_stats)

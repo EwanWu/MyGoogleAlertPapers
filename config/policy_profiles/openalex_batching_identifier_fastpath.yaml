@@ -1,0 +1,48 @@
+profile_name: openalex_batching_identifier_fastpath
+summary: >
+  Provider-lane experiment profile: keep the current mainline matching/merge behavior,
+  but execute only the identifier_fastpath lane during enrich.
+  Purpose: measure whether an explicit identifier-first lane can provide a scalable
+  live-throughput core before title-heavy fallback providers are reintroduced.
+notes:
+  - Inherit current conditional_sources_v2_author_blob_fallback_only routing and merge behavior
+  - Keep provider enablement close to mainline; lane filtering is the main experimental switch
+  - semantic scholar remains enabled at profile level but is excluded because it belongs to slow_fallback
+provider_rules:
+  crossref:
+    enabled: true
+    title_payload_reuse_enabled: true
+  openalex:
+    enabled: true
+    doi_batch_enabled: true
+    title_payload_reuse_enabled: true
+  semanticscholar:
+    enabled: true
+    title_payload_reuse_enabled: true
+  pubmed:
+    enabled: true
+    fallback_only_for_core_fields: true
+  europepmc:
+    enabled: true
+    trigger_mode: narrowed_biomedical_fallback
+  arxiv:
+    enabled: true
+    trigger_mode: arxiv_native_only
+merge_rules:
+  pubmed_title_doi_suppression: true
+  normalized_only_fallback: true
+  fallback_reject_author_blob_identifier_aware: true
+runtime_rules:
+  lane_order:
+    - identifier_fastpath
+    - title_core
+    - biomedical_fallback
+    - slow_fallback
+  enabled_lanes:
+    - identifier_fastpath
+replay_defaults:
+  stages:
+    - normalize
+    - enrich
+    - merge
+    - dedup

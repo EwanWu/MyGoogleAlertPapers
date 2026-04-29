@@ -1,0 +1,49 @@
+profile_name: openalex_batching_identifier_plus_title_core
+summary: >
+  Provider-lane experiment profile: execute identifier_fastpath plus title_core lanes,
+  while excluding biomedical title fallback and slow_fallback providers.
+  Purpose: test whether the first two enrichment lanes can serve as a realistic
+  live default before slower fallback providers are deferred.
+notes:
+  - Keep current conditional_sources_v2_author_blob_fallback_only merge behavior
+  - Include DOI/PMID/arXiv identifier work plus Crossref/OpenAlex title lookups
+  - Exclude Semantic Scholar and biomedical title fallback from the live path via lane filtering
+provider_rules:
+  crossref:
+    enabled: true
+    title_payload_reuse_enabled: true
+  openalex:
+    enabled: true
+    doi_batch_enabled: true
+    title_payload_reuse_enabled: true
+  semanticscholar:
+    enabled: true
+    title_payload_reuse_enabled: true
+  pubmed:
+    enabled: true
+    fallback_only_for_core_fields: true
+  europepmc:
+    enabled: true
+    trigger_mode: narrowed_biomedical_fallback
+  arxiv:
+    enabled: true
+    trigger_mode: arxiv_native_only
+merge_rules:
+  pubmed_title_doi_suppression: true
+  normalized_only_fallback: true
+  fallback_reject_author_blob_identifier_aware: true
+runtime_rules:
+  lane_order:
+    - identifier_fastpath
+    - title_core
+    - biomedical_fallback
+    - slow_fallback
+  enabled_lanes:
+    - identifier_fastpath
+    - title_core
+replay_defaults:
+  stages:
+    - normalize
+    - enrich
+    - merge
+    - dedup

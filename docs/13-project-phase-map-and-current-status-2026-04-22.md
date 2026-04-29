@@ -88,11 +88,13 @@ The current runtime-default additions are justified by a smaller but decision-gr
 - `docs/validation/day3-crosscheck-enrich-smoke12-20260427.md`
 - `docs/validation/day3-dispatch-report-smoke12-20260427.md`
 - `docs/validation/recorded_deterministic_ab_medium60_20260427.md`
+- `docs/validation/day5-provider-lane-ablation-120-20260429.md`
 
 What these established:
 - Day 2 operator-boundary hardening is in place and regression-tested
 - Day 3 dispatch/cache/runtime changes did not break the validated merge/dedup path
 - narrow-scope title payload reuse was promoted only after deterministic recorded-payload replay showed zero candidate-level semantic drift on the medium60 comparison
+- explicit runtime lane gating is now viable: `identifier_fastpath` is a stable live core, and `identifier_fastpath + title_core` is the current best candidate for the synchronous default path
 
 ## Active document set to read now
 
@@ -111,21 +113,24 @@ What these established:
 
 ## What is still open
 
-The main unresolved problem is no longer whether narrow Day 3 runtime optimizations should ship. The current unresolved problem is **generalization plus higher-yield scheduling/batching**.
+The main unresolved problem is no longer whether narrow Day 3 runtime optimizations should ship. The current unresolved problem is **how to turn enrich into an explicit staged lane system with controllable live budgets**.
 
 The next useful validation is:
 - preserve the current promoted mainline/runtime defaults
-- run them on a genuinely fresh slice or a larger fixed slice
-- prioritize higher-yield request-reduction opportunities that can still be judged by fixed-seed replay
+- treat `identifier_fastpath + title_core` as the primary live-lane candidate
+- keep `biomedical_fallback` and `slow_fallback` outside the synchronous default path until separately budgeted
+- prioritize request-reduction inside the title core lane, especially `crossref` title cost, while keeping judgment on fixed-seed replay
 
 ## Immediate next-step direction
 
-The most promising next phase is no longer broad policy exploration. It is **higher-yield request scheduling with replay-checked semantics**.
+The most promising next phase is no longer broad policy exploration. It is **provider-lane execution control with replay-checked semantics**.
 
 Recommended order:
-1. push the largest remaining batching opportunity first, especially OpenAlex DOI batching from plan-level recommendation toward broader production use
-2. keep every new scheduling optimization behind fixed-seed replay and, when needed, recorded-payload replay
-3. avoid changing match standards unless a new correctness problem appears
+1. keep `identifier_fastpath` as the guaranteed live base lane
+2. optimize the `title_core` lane as the main synchronous extension, with special focus on `crossref` title cost
+3. add explicit lane budgets / stop conditions before attempting provider concurrency
+4. keep every new scheduling optimization behind fixed-seed replay and, when needed, recorded-payload replay
+5. avoid changing match standards unless a new correctness problem appears
 
 ## What should not be reopened casually
 
