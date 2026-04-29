@@ -78,7 +78,7 @@ def _load_external_imap_skill_env(account: str | None = None) -> dict[str, str]:
 
 def _default_policy_profile() -> PolicyProfile:
     raw = {
-        'profile_name': 'builtin_identifier_plus_title_core_default',
+        'profile_name': 'builtin_identifier_plus_title_core_same_batch_cluster_default',
         'provider_rules': {
             'crossref': {'enabled': True, 'title_payload_reuse_enabled': True},
             'openalex': {'enabled': True, 'doi_batch_enabled': True, 'title_payload_reuse_enabled': True},
@@ -96,6 +96,7 @@ def _default_policy_profile() -> PolicyProfile:
             'lane_order': ['identifier_fastpath', 'title_core', 'biomedical_fallback', 'slow_fallback'],
             'enabled_lanes': ['identifier_fastpath', 'title_core'],
             'library_prelink_enabled': True,
+            'same_batch_clustering_enabled': True,
         },
         'replay_defaults': {
             'stages': ['enrich', 'merge', 'dedup'],

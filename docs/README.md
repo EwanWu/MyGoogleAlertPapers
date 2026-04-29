@@ -44,8 +44,8 @@ Read these first when you want the current project state, current default flow, 
 - `docs/validation/day5-identifier-plus-title-core-live150-20260429.md` — closest-to-production slice150 live replay for the promoted synchronous lane profile; confirms clean enrich→merge→dedup completion without reopening slow fallback lanes
 - `docs/16-duplicate-provider-query-elimination-plan-2026-04-29.md` — analysis + staged blueprint for suppressing repeated provider queries via exact library prelink, same-batch candidate clustering, and stronger article-identity aliases above the current query-cache layer
 - `docs/17-phase1-library-prelink-implementation-and-ablation-2026-04-29.md` — implementation archive + live control/treatment evidence showing that exact library-first prelink is now a proven, fixed workstream rather than a speculative idea
-- `docs/validation/day6-same-batch-cluster-ablation-150-20260429.md` — first same-batch exact clustering ablation on top of exact prelink; shows ~23.8% wall-time reduction and ~21.2% dispatch-request reduction on a synthetic duplicate stress slice
-- code/runtime note: the builtin CLI default and baseline helper default are now aligned to `openalex_batching_identifier_plus_title_core`, and the runtime layer now also enables exact `library_prelink` by default before provider fanout
+- `docs/validation/day6-same-batch-cluster-ablation-150-20260429.md` — first same-batch exact clustering ablation on top of exact prelink; shows ~23.8% wall-time reduction and ~21.2% dispatch-request reduction on a synthetic duplicate stress slice, and now serves as the promotion basis for enabling exact same-batch clustering in the default runtime layer
+- code/runtime note: the builtin CLI default and baseline helper default are now aligned to the same-batch-clustered `identifier_fastpath + title_core` runtime, and the default runtime layer now enables both exact `library_prelink` and exact `same_batch_clustering` before residual provider fanout
 
 ### Current operations / data-acquisition validation
 

@@ -155,6 +155,24 @@ Promote the following staged architecture as the current fixed workstream order:
 3. residual `identifier_fastpath + title_core` runtime optimization
 4. continued `crossref` title-lane cost reduction
 
+## Promotion / binding decision
+
+As of 2026-04-29, same-batch exact clustering should be treated as **promoted into the default runtime layer**, not merely as an optional experimental patch.
+
+Binding implications:
+
+- builtin default runtime should enable `same_batch_clustering_enabled: true`
+- baseline helper default profile should move from
+  `openalex_batching_identifier_plus_title_core.yaml`
+  to
+  `openalex_batching_identifier_plus_title_core_same_batch_cluster.yaml`
+
+Scope note:
+
+- this promotion means “default on for the current synchronous runtime layer”
+- it does **not** mean broader fuzzy same-batch clustering is approved
+- it does **not** relax the rule that only exact / deterministic cluster keys are allowed in this layer
+
 ## Artifact paths
 
 - control JSON: `docs/validation/day6-same-batch-cluster-control-150-20260429.json`

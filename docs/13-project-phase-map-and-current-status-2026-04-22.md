@@ -102,7 +102,8 @@ What these established:
 - that promotion is no longer only documentary: the builtin CLI default and baseline helper default have been rebound to the `identifier_fastpath + title_core` profile, so default runs now execute the staged live path rather than the older full-provider synchronous fanout
 - explicit per-lane stop conditions are now also viable: a budget-capped `title_core` run stops cleanly, records its stop reason in dispatch stats, and yields a controllable coverage/runtime tradeoff instead of a timeout boundary
 - exact duplicate-query elimination has now crossed from blueprint to implementation for Phase 1: the runtime performs exact library-first prelink before provider dispatch, and live control/treatment evidence shows the operator-visible cost delta is large enough to justify making this the fixed next-stage workstream
-- the next layer is now also validated: exact same-batch candidate clustering on top of prelink reduced dispatch groups `264 -> 216`, dispatch requests `226 -> 178`, and total batch wall time `586361 -> 447053 ms` on the day6 synthetic duplicate stress slice without adding review burden
+- the next layer is now also validated and promoted: exact same-batch candidate clustering on top of prelink reduced dispatch groups `264 -> 216`, dispatch requests `226 -> 178`, and total batch wall time `586361 -> 447053 ms` on the day6 synthetic duplicate stress slice without adding review burden
+- this promotion is no longer only documentary: the builtin runtime default and the baseline helper default should now both bind to the same-batch-cluster-enabled synchronous profile rather than the earlier pre-clustering `identifier_plus_title_core` default
 
 ## Active document set to read now
 
@@ -122,7 +123,7 @@ What these established:
 
 ## What is still open
 
-The main unresolved problem is no longer whether staged live lanes are viable, nor whether exact library-first prelink is worth implementing, nor whether exact same-batch clustering can matter in practice. All three are now established. The current unresolved problem is **how to combine exact prelink, same-batch clustering, and lane-level runtime control so the promoted `identifier_fastpath + title_core` default stays fast under wider live bursts, mainly by shrinking residual `crossref` title-lane cost**.
+The main unresolved problem is no longer whether staged live lanes are viable, nor whether exact library-first prelink is worth implementing, nor whether exact same-batch clustering can matter in practice. All three are now established and have now been promoted into the default runtime layer. The current unresolved problem is **how to combine exact prelink, same-batch clustering, and lane-level runtime control so the promoted `identifier_fastpath + title_core` default stays fast under wider live bursts, mainly by shrinking residual `crossref` title-lane cost**.
 
 The next useful validation is:
 - preserve the current promoted mainline/runtime defaults
@@ -140,7 +141,7 @@ Recommended order:
 1. keep exact `library_prelink` as the first short-circuit layer
 2. keep exact same-batch candidate clustering as the second short-circuit layer
 3. keep `identifier_fastpath` as the guaranteed live base lane for unresolved candidates
-4. keep `identifier_fastpath + title_core` as the promoted synchronous default profile
+4. keep the same-batch-cluster-enabled `identifier_fastpath + title_core` profile as the promoted synchronous default profile
 5. optimize the residual `title_core` lane, with special focus on `crossref` title cost
 6. tune explicit lane budgets / stop conditions as degraded-safe modes before attempting provider concurrency
 7. keep every new scheduling optimization behind fixed-seed replay and, when needed, recorded-payload replay
