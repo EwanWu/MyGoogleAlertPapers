@@ -1,0 +1,49 @@
+profile_name: openalex_batching_identifier_plus_title_core_same_batch_cluster
+summary: >
+  Experimental profile for exact same-batch candidate clustering on top of the
+  promoted identifier_fastpath + title_core synchronous lane shape.
+notes:
+  - Preserve exact library-first prelink
+  - Preserve promoted identifier_fastpath + title_core lane defaults
+  - Enable exact same-batch clustering before provider fanout
+provider_rules:
+  crossref:
+    enabled: true
+    title_payload_reuse_enabled: true
+  openalex:
+    enabled: true
+    doi_batch_enabled: true
+    title_payload_reuse_enabled: true
+  semanticscholar:
+    enabled: true
+    title_payload_reuse_enabled: true
+  pubmed:
+    enabled: true
+    fallback_only_for_core_fields: true
+  europepmc:
+    enabled: true
+    trigger_mode: narrowed_biomedical_fallback
+  arxiv:
+    enabled: true
+    trigger_mode: arxiv_native_only
+merge_rules:
+  pubmed_title_doi_suppression: true
+  normalized_only_fallback: true
+  fallback_reject_author_blob_identifier_aware: true
+runtime_rules:
+  lane_order:
+    - identifier_fastpath
+    - title_core
+    - biomedical_fallback
+    - slow_fallback
+  enabled_lanes:
+    - identifier_fastpath
+    - title_core
+  library_prelink_enabled: true
+  same_batch_clustering_enabled: true
+replay_defaults:
+  stages:
+    - normalize
+    - enrich
+    - merge
+    - dedup

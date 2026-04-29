@@ -6,6 +6,7 @@ from pathlib import Path
 
 from mygooglealertpapers.config import PolicyProfile, Settings
 from mygooglealertpapers.db.schema import create_schema_at_default_path
+from mygooglealertpapers.enrich.base import EnrichmentRecord
 from mygooglealertpapers.pipeline.enrich import enrich_candidates
 from mygooglealertpapers.pipeline.merge import build_merged_metadata
 
@@ -224,3 +225,100 @@ def test_merge_skips_library_prelinked_candidates(tmp_path: Path):
 
     with sqlite3.connect(db_path) as conn:
         assert conn.execute('SELECT COUNT(*) FROM merged_metadata_proposal').fetchone()[0] == 0
+
+
+def test_same_batch_cluster_reuses_leader_identifier_intents_for_url_exact_followers(tmp_path: Path, monkeypatch):
+    db_path = tmp_path / 'mgap.db'
+    create_schema_at_default_path(db_path)
+    settings = _make_settings(
+        db_path,
+        provider_rules={
+            'crossref': {'enabled': True},
+            'openalex': {'enabled': True, 'doi_batch_enabled': False},
+            'semanticscholar': {'enabled': False},
+            'pubmed': {'enabled': False},
+            'europepmc': {'enabled': False},
+            'arxiv': {'enabled': False},
+            'unpaywall': {'enabled': False},
+        },
+        runtime_rules={'library_prelink_enabled': False, 'same_batch_clustering_enabled': True},
+    )
+
+    with sqlite3.connect(db_path) as conn:
+        conn.executemany(
+            '''
+            INSERT INTO paper_candidate_normalized (
+                candidate_id, norm_title, norm_title_key, first_author_family,
+                year_guess, venue_guess, doi_extracted, url_canonical
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''',
+            [
+                ('cand_leader', 'Shared Paper Canonical', 'shared paper canonical', 'Wu', '2026', 'Nature', '10.1000/shared', 'https://example.org/shared-paper'),
+                ('cand_follower', 'Shared Paper Variant Title', 'shared paper variant title', 'Wu', '2026', 'Nature', None, 'https://example.org/shared-paper'),
+            ],
+        )
+        conn.commit()
+
+    calls = {'crossref': 0, 'openalex': 0}
+
+    def make_record(candidate_id: str, source_name: str, query_type: str, query_string: str):
+        return EnrichmentRecord(
+            candidate_id=candidate_id,
+            source_name=source_name,
+            query_type=query_type,
+            query_string=query_string,
+            matched=True,
+            match_score=0.99,
+            external_id=f'{source_name}:shared',
+            title='Shared Paper Canonical',
+            authors_json=json.dumps(['Yue Wu'], ensure_ascii=False),
+            abstract=None,
+            venue='Nature',
+            year='2026',
+            publication_type='journal-article',
+            doi='10.1000/shared',
+            pmid=None,
+            pmcid=None,
+            url='https://doi.org/10.1000/shared',
+            raw_payload_json=json.dumps({'status': 'ok', 'doi': '10.1000/shared'}, ensure_ascii=False),
+            latency_ms=25,
+        )
+
+    def fake_query_crossref(candidate_id: str, *, doi: str | None = None, title: str | None = None, **kwargs):
+        calls['crossref'] += 1
+        return make_record(candidate_id, 'crossref', 'doi' if doi else 'title', doi or title or '')
+
+    def fake_query_openalex(candidate_id: str, *, doi: str | None = None, title: str | None = None, **kwargs):
+        calls['openalex'] += 1
+        return make_record(candidate_id, 'openalex', 'doi' if doi else 'title', doi or title or '')
+
+    monkeypatch.setattr('mygooglealertpapers.pipeline.enrich.query_crossref', fake_query_crossref)
+    monkeypatch.setattr('mygooglealertpapers.pipeline.enrich.query_openalex', fake_query_openalex)
+
+    enrich_candidates(settings, limit=10)
+
+    assert calls == {'crossref': 1, 'openalex': 1}
+    with sqlite3.connect(db_path) as conn:
+        resolution = conn.execute(
+            'SELECT resolution_stage, resolution_rule, leader_candidate_id, status FROM candidate_resolution_status WHERE candidate_id = ?',
+            ('cand_follower',),
+        ).fetchone()
+        assert resolution == ('same_batch_cluster', 'url_canonical_exact_cluster', 'cand_leader', 'clustered')
+        notes = conn.execute(
+            "SELECT notes FROM batch_run WHERE stage = 'enrich_candidates' ORDER BY id DESC LIMIT 1"
+        ).fetchone()[0]
+        stats = json.loads(notes)
+        assert stats['same_batch_clustering_enabled'] is True
+        assert stats['same_batch_cluster_group_count'] == 1
+        assert stats['same_batch_clustered_candidate_count'] == 1
+        assert stats['same_batch_cluster_rule_counts'] == {'url_canonical_exact_cluster': 1}
+        assert stats['same_batch_cluster_group_savings_estimate'] > 0
+        assert stats['dispatch_request_count'] == 2
+        assert conn.execute(
+            'SELECT COUNT(*) FROM source_record WHERE candidate_id = ? AND source_name = ?',
+            ('cand_follower', 'crossref'),
+        ).fetchone()[0] == 1
+        assert conn.execute(
+            'SELECT COUNT(*) FROM source_record WHERE candidate_id = ? AND source_name = ?',
+            ('cand_follower', 'openalex'),
+        ).fetchone()[0] == 1

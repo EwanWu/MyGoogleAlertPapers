@@ -18,7 +18,11 @@ from mygooglealertpapers.enrich.semanticscholar import build_semanticscholar_rec
 from mygooglealertpapers.enrich.europepmc import query_europepmc
 from mygooglealertpapers.enrich.arxiv import query_arxiv
 from mygooglealertpapers.enrich.unpaywall import query_unpaywall
-from mygooglealertpapers.pipeline.candidate_resolution import library_prelink_enabled, prelink_candidates_against_library
+from mygooglealertpapers.pipeline.candidate_resolution import (
+    cluster_candidates_within_batch,
+    library_prelink_enabled,
+    prelink_candidates_against_library,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +62,41 @@ class DispatchGroup:
     @property
     def query_key(self) -> str:
         return self.representative.query_key
+
+
+def _clone_intent_for_candidate(intent: ProviderIntent, candidate_id: str) -> ProviderIntent:
+    return ProviderIntent(
+        candidate_id=candidate_id,
+        provider=intent.provider,
+        query_type=intent.query_type,
+        query_key=intent.query_key,
+        norm_title=intent.norm_title,
+        doi=intent.doi,
+        pmid=intent.pmid,
+        arxiv_id=intent.arxiv_id,
+        first_author_family=intent.first_author_family,
+        venue_guess=intent.venue_guess,
+        year_guess=intent.year_guess,
+    )
+
+
+def _build_same_batch_clustered_intents(
+    settings: Settings,
+    rows: list,
+    cluster_summary: dict[str, object],
+) -> list[ProviderIntent]:
+    follower_to_leader = dict(cluster_summary.get('follower_to_leader') or {})
+    leader_to_followers = dict(cluster_summary.get('leader_to_followers') or {})
+    intents: list[ProviderIntent] = []
+    for row in rows:
+        candidate_id = row[0]
+        if candidate_id in follower_to_leader:
+            continue
+        leader_intents = _build_provider_intents(settings, row[:8])
+        intents.extend(leader_intents)
+        for follower_candidate_id in leader_to_followers.get(candidate_id, []):
+            intents.extend(_clone_intent_for_candidate(intent, follower_candidate_id) for intent in leader_intents)
+    return intents
 
 
 def _canonical_query_key(query_type: str, value: str | None) -> str:
@@ -628,10 +667,19 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
 
         prelink_summary = prelink_candidates_against_library(settings, repo, tracker, conn, rows)
         prelinked_candidate_ids = set(prelink_summary['prelinked_candidate_ids'])
-        unresolved_intents = [intent for intent in all_intents if intent.candidate_id not in prelinked_candidate_ids]
+        unresolved_rows = [row for row in rows if row[0] not in prelinked_candidate_ids]
+
+        naive_unresolved_intents: list[ProviderIntent] = []
+        for row in unresolved_rows:
+            naive_unresolved_intents.extend(_build_provider_intents(settings, row[:8]))
+
+        cluster_summary = cluster_candidates_within_batch(settings, repo, conn, unresolved_rows)
+        unresolved_intents = _build_same_batch_clustered_intents(settings, unresolved_rows, cluster_summary)
 
         runnable_intents = [intent for intent in unresolved_intents if _should_run_provider(repo, conn, intent)]
         dispatch_groups, lane_group_counts, lane_intent_counts = _prepare_dispatch_groups(settings, runnable_intents)
+        naive_dispatch_groups, _, _ = _prepare_dispatch_groups(settings, naive_unresolved_intents)
+        clustered_dispatch_groups, _, _ = _prepare_dispatch_groups(settings, unresolved_intents)
         logger.info(
             'Planned %s provider intent(s); %s need work; %s dispatch group(s) after safe dedup; lanes=%s',
             len(all_intents),
@@ -641,14 +689,22 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
         )
 
         openalex_doi_batch_enabled = bool(_provider_value(settings, 'openalex', 'doi_batch_enabled', True))
+        planned_provider_intents = len(all_intents)
         dispatch_stats = {
             'candidate_count': len(rows),
-            'unresolved_candidate_count': len({intent.candidate_id for intent in unresolved_intents}),
+            'unresolved_candidate_count': len(unresolved_rows),
             'library_prelink_enabled': library_prelink_enabled(settings),
             'library_prelinked_candidate_count': prelink_summary['prelinked_candidate_count'],
             'library_prelink_rule_counts': prelink_summary['rule_counts'],
-            'planned_provider_intents': len(all_intents),
-            'prelink_skipped_provider_intents': len(all_intents) - len(unresolved_intents),
+            'same_batch_clustering_enabled': bool(cluster_summary.get('enabled')),
+            'same_batch_cluster_group_count': int(cluster_summary.get('cluster_group_count', 0) or 0),
+            'same_batch_clustered_candidate_count': int(cluster_summary.get('clustered_candidate_count', 0) or 0),
+            'same_batch_cluster_rule_counts': dict(cluster_summary.get('rule_counts') or {}),
+            'same_batch_cluster_naive_group_count': len(naive_dispatch_groups),
+            'same_batch_cluster_effective_group_count': len(clustered_dispatch_groups),
+            'same_batch_cluster_group_savings_estimate': len(naive_dispatch_groups) - len(clustered_dispatch_groups),
+            'planned_provider_intents': planned_provider_intents,
+            'prelink_skipped_provider_intents': planned_provider_intents - len(naive_unresolved_intents),
             'unresolved_provider_intents': len(unresolved_intents),
             'runnable_provider_intents': len(runnable_intents),
             'dispatch_group_count': len(dispatch_groups),

@@ -21,12 +21,26 @@ class LibraryPrelinkMatch:
     confidence: float
 
 
+EXACT_CLUSTER_PRIORITY: list[tuple[str, str, float]] = [
+    ('doi', 'doi_exact_cluster', 1.0),
+    ('pmid', 'pmid_exact_cluster', 1.0),
+    ('pmcid', 'pmcid_exact_cluster', 1.0),
+    ('arxiv', 'arxiv_exact_cluster', 0.99),
+    ('scholar_cluster', 'scholar_cluster_exact_cluster', 0.98),
+    ('url_canonical', 'url_canonical_exact_cluster', 0.97),
+]
+
+
 def _runtime_value(settings: Settings, key: str, default: object = None) -> object:
     return settings.policy_profile.runtime_value(key, default)
 
 
 def library_prelink_enabled(settings: Settings) -> bool:
     return bool(_runtime_value(settings, 'library_prelink_enabled', True))
+
+
+def same_batch_clustering_enabled(settings: Settings) -> bool:
+    return bool(_runtime_value(settings, 'same_batch_clustering_enabled', False))
 
 
 def _normalize_doi(value: str | None) -> str | None:
@@ -87,6 +101,149 @@ def _candidate_exact_keys(row: sqlite3.Row | tuple) -> dict[str, str]:
     if norm := _normalize_scholar_cluster(scholar_cluster_hint):
         result['scholar_cluster'] = norm
     return result
+
+
+def _pick_cluster_leader(component_rows: list[sqlite3.Row | tuple], order_index: dict[str, int]) -> sqlite3.Row | tuple:
+    def score(row: sqlite3.Row | tuple) -> tuple[int, int, int, int, int, int, int, int]:
+        keys = _candidate_exact_keys(row)
+        candidate_id = row[0]
+        norm_title = row[1]
+        return (
+            int('doi' in keys),
+            int('pmid' in keys),
+            int('pmcid' in keys),
+            int('arxiv' in keys),
+            int('scholar_cluster' in keys),
+            int('url_canonical' in keys),
+            int(bool(norm_title)),
+            -order_index.get(candidate_id, 0),
+        )
+
+    return max(component_rows, key=score)
+
+
+def cluster_candidates_within_batch(
+    settings: Settings,
+    repo: Repository,
+    conn: sqlite3.Connection,
+    rows: list[sqlite3.Row | tuple],
+) -> dict[str, object]:
+    if not same_batch_clustering_enabled(settings):
+        return {
+            'enabled': False,
+            'leader_to_followers': {},
+            'follower_to_leader': {},
+            'clustered_candidate_count': 0,
+            'cluster_group_count': 0,
+            'rule_counts': {},
+        }
+
+    row_by_candidate = {row[0]: row for row in rows}
+    order_index = {row[0]: idx for idx, row in enumerate(rows)}
+    parent = {candidate_id: candidate_id for candidate_id in row_by_candidate}
+
+    def find(candidate_id: str) -> str:
+        root = candidate_id
+        while parent[root] != root:
+            root = parent[root]
+        while parent[candidate_id] != candidate_id:
+            nxt = parent[candidate_id]
+            parent[candidate_id] = root
+            candidate_id = nxt
+        return root
+
+    def union(left: str, right: str) -> None:
+        left_root = find(left)
+        right_root = find(right)
+        if left_root == right_root:
+            return
+        if order_index[left_root] <= order_index[right_root]:
+            parent[right_root] = left_root
+        else:
+            parent[left_root] = right_root
+
+    buckets: dict[tuple[str, str], list[str]] = {}
+    for row in rows:
+        candidate_id = row[0]
+        for alias_type, alias_key in _candidate_exact_keys(row).items():
+            buckets.setdefault((alias_type, alias_key), []).append(candidate_id)
+
+    for candidate_ids in buckets.values():
+        if len(candidate_ids) < 2:
+            continue
+        leader = candidate_ids[0]
+        for follower in candidate_ids[1:]:
+            union(leader, follower)
+
+    components: dict[str, list[str]] = {}
+    for candidate_id in row_by_candidate:
+        components.setdefault(find(candidate_id), []).append(candidate_id)
+
+    leader_to_followers: dict[str, list[str]] = {}
+    follower_to_leader: dict[str, str] = {}
+    rule_counts: dict[str, int] = {}
+    cluster_group_count = 0
+
+    for component_candidate_ids in components.values():
+        if len(component_candidate_ids) < 2:
+            continue
+        component_rows = [row_by_candidate[candidate_id] for candidate_id in sorted(component_candidate_ids, key=lambda cid: order_index[cid])]
+        leader_row = _pick_cluster_leader(component_rows, order_index)
+        leader_candidate_id = leader_row[0]
+        leader_keys = _candidate_exact_keys(leader_row)
+        cluster_group_count += 1
+
+        shared_alias_type = None
+        shared_alias_key = None
+        shared_rule = 'same_batch_exact_cluster'
+        shared_confidence = 0.97
+        for alias_type, rule, confidence in EXACT_CLUSTER_PRIORITY:
+            alias_key = leader_keys.get(alias_type)
+            if not alias_key:
+                continue
+            member_count = sum(1 for row in component_rows if _candidate_exact_keys(row).get(alias_type) == alias_key)
+            if member_count >= 2:
+                shared_alias_type = alias_type
+                shared_alias_key = alias_key
+                shared_rule = rule
+                shared_confidence = confidence
+                break
+
+        followers = [candidate_id for candidate_id in sorted(component_candidate_ids, key=lambda cid: order_index[cid]) if candidate_id != leader_candidate_id]
+        if not followers:
+            continue
+        leader_to_followers[leader_candidate_id] = followers
+        rule_counts[shared_rule] = rule_counts.get(shared_rule, 0) + len(followers)
+
+        for follower_candidate_id in followers:
+            follower_to_leader[follower_candidate_id] = leader_candidate_id
+            evidence = {
+                'rule': shared_rule,
+                'leader_candidate_id': leader_candidate_id,
+                'shared_alias_type': shared_alias_type,
+                'shared_alias_key': shared_alias_key,
+                'confidence': shared_confidence,
+                'cluster_candidate_ids': [leader_candidate_id, *followers],
+            }
+            repo.upsert_candidate_resolution_status(
+                conn,
+                candidate_id=follower_candidate_id,
+                resolution_stage='same_batch_cluster',
+                resolution_rule=shared_rule,
+                paper_id=None,
+                leader_candidate_id=leader_candidate_id,
+                status='clustered',
+                evidence_json=json.dumps(evidence, ensure_ascii=False),
+            )
+
+    return {
+        'enabled': True,
+        'leader_to_followers': leader_to_followers,
+        'follower_to_leader': follower_to_leader,
+        'clustered_candidate_count': len(follower_to_leader),
+        'cluster_group_count': cluster_group_count,
+        'rule_counts': rule_counts,
+    }
 
 
 def _ensure_identity_aliases(repo: Repository, conn: sqlite3.Connection) -> None:
