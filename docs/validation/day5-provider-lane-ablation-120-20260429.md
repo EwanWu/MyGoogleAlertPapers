@@ -43,6 +43,7 @@ Excluded by lane gate:
 | Day 4 no-`semanticscholar` reference | 325 / 354 | 91.8% | n/a | n/a | projected 10.79 min | mixed live fanout |
 | `identifier_fastpath` | 100 / 474 | 21.1% | 46 | 94 | 69.75 s | `crossref` DOI |
 | `identifier_plus_title_core` | 246 / 474 | 51.9% | 178 | 194 | 455.18 s | `crossref` title + `openalex` title |
+| `identifier_plus_title_core_budget60` | 172 / 474 | 36.3% | 106 | 145 | 250.67 s | `crossref` title (budget-capped) |
 
 ## Direct observations
 
@@ -64,6 +65,21 @@ Excluded by lane gate:
   - `shared_title_reuse_request_savings = 14`
 - But the main cost is still serialized title traffic, especially `crossref` title lookups.
 
+### `identifier_plus_title_core_budget60`
+- Completed in about **4.18 min**.
+- Explicitly capped `title_core` at **60 dispatch requests**.
+- Final lane stats showed:
+  - `lane_dispatch_request_count.title_core = 60`
+  - `lane_stop_reasons.title_core = request_budget_exhausted`
+  - `lane_skipped_group_count.title_core = 72`
+  - `lane_skipped_intents.title_core = 74`
+- Coverage fell relative to the uncapped title-core run:
+  - processed intents: **172 vs 246**
+  - matched source records: **145 vs 194**
+- But it reduced wall time materially:
+  - **250.67 s vs 455.18 s**
+- Mechanistically, this is the first proof that lane budgets are not just a config abstraction — they produce a clean, inspectable live stop boundary.
+
 ## Mechanistic interpretation
 
 The lane split works.
@@ -78,6 +94,7 @@ It separates the enrich problem into three operationally different layers:
 
 2. **Lane 2: title core**
    - still viable for live execution on slice120
+   - now supports explicit stop conditions, so it can be run either as a fuller synchronous lane or as a budget-capped extension
    - main remaining cost center is `crossref` title latency, not `openalex` DOI batching
    - good candidate for the default synchronous extension after lane 1
 
@@ -92,20 +109,23 @@ Current evidence supports the following runtime strategy:
 - **Do not go back to full-provider synchronous enrich.**
 - Treat **`identifier_fastpath` as the guaranteed live base lane**.
 - Treat **`identifier_fastpath + title_core` as the main candidate for the next live default experiment**.
+- Treat **lane budgets / stop conditions as promoted runtime control**, not just an experimental branch idea.
 - Keep `biomedical_fallback` and `slow_fallback` out of the default synchronous path for now.
 
 ## Next coding target
 
 The next useful optimization target is no longer “provider on/off” in the abstract. It is specifically:
 
-1. make lane execution first-class in reports and docs
-2. add explicit per-lane budgets / stop conditions
-3. reduce `crossref` title-lane wall time
+1. tune `title_core` budget shape (request count and, if needed, runtime cap)
+2. reduce `crossref` title-lane wall time
+3. make budgeted-lane summaries first-class in reports and docs
 4. only then revisit provider-specific concurrency or circuit breakers
 
 ## Artifact paths
 
 - `config/policy_profiles/openalex_batching_identifier_fastpath.yaml`
 - `config/policy_profiles/openalex_batching_identifier_plus_title_core.yaml`
+- `config/policy_profiles/openalex_batching_identifier_plus_title_core_budget60.yaml`
 - `docs/validation/day5-identifier-fastpath-120-20260429.json`
 - `docs/validation/day5-identifier-plus-title-core-120-20260429.json`
+- `docs/validation/day5-identifier-plus-title-core-budget60-120-20260429.json`

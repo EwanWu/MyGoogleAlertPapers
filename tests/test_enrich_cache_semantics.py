@@ -487,3 +487,172 @@ def test_enrich_candidates_identifier_fastpath_lane_filters_slow_title_fallbacks
         assert stats['enabled_lanes'] == ['identifier_fastpath']
         assert stats['lane_group_counts'] == {'identifier_fastpath': 2}
         assert stats['lane_processed_intents'] == {'identifier_fastpath': 2}
+
+
+def test_enrich_candidates_stops_lane_after_request_budget(tmp_path: Path, monkeypatch):
+    db_path = tmp_path / 'mgap.db'
+    create_schema_at_default_path(db_path)
+    settings = _make_settings(
+        db_path,
+        provider_rules={
+            'crossref': {'enabled': True},
+            'openalex': {'enabled': False},
+            'semanticscholar': {'enabled': False},
+            'pubmed': {'enabled': False},
+            'europepmc': {'enabled': False},
+            'arxiv': {'enabled': False},
+            'unpaywall': {'enabled': False},
+        },
+        runtime_rules={
+            'enabled_lanes': ['title_core'],
+            'lane_request_budgets': {'title_core': 1},
+        },
+    )
+
+    with sqlite3.connect(db_path) as conn:
+        conn.executemany(
+            '''
+            INSERT INTO paper_candidate_normalized (
+                candidate_id, norm_title, norm_title_key, first_author_family, venue_guess, year_guess
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            ''',
+            [
+                ('cand_budget1', 'Budget Title One', 'budget title one', 'Wu', 'Nature', '2026'),
+                ('cand_budget2', 'Budget Title Two', 'budget title two', 'Wu', 'Nature', '2026'),
+            ],
+        )
+        conn.commit()
+
+    calls = {'count': 0}
+
+    def fake_query_crossref(candidate_id: str, **kwargs):
+        calls['count'] += 1
+        return EnrichmentRecord(
+            candidate_id=candidate_id,
+            source_name='crossref',
+            query_type='title',
+            query_string='Budget Title One',
+            matched=True,
+            match_score=0.99,
+            external_id='crossref:budget',
+            title='Budget Title One',
+            authors_json=json.dumps(['Yue Wu'], ensure_ascii=False),
+            abstract=None,
+            venue='Nature',
+            year='2026',
+            publication_type='journal-article',
+            doi='10.1000/budget',
+            pmid=None,
+            pmcid=None,
+            url='https://doi.org/10.1000/budget',
+            raw_payload_json=json.dumps({'status': 'ok', 'doi': '10.1000/budget'}, ensure_ascii=False),
+            latency_ms=42,
+        )
+
+    monkeypatch.setattr('mygooglealertpapers.pipeline.enrich.query_crossref', fake_query_crossref)
+
+    enrich_candidates(settings, limit=10)
+
+    assert calls['count'] == 1
+    with sqlite3.connect(db_path) as conn:
+        source_count = conn.execute(
+            'SELECT COUNT(*) FROM source_record WHERE source_name = ?',
+            ('crossref',),
+        ).fetchone()[0]
+        assert source_count == 1
+        notes = conn.execute(
+            "SELECT notes FROM batch_run WHERE stage = 'enrich_candidates' ORDER BY id DESC LIMIT 1"
+        ).fetchone()[0]
+        stats = json.loads(notes)
+        assert stats['lane_request_budgets'] == {'title_core': 1}
+        assert stats['lane_dispatch_request_count'] == {'title_core': 1}
+        assert stats['lane_processed_intents'] == {'title_core': 1}
+        assert stats['lane_stop_reasons'] == {'title_core': 'request_budget_exhausted'}
+        assert stats['lane_skipped_group_count'] == {'title_core': 1}
+        assert stats['lane_skipped_intents'] == {'title_core': 1}
+
+
+def test_enrich_candidates_cache_hits_do_not_consume_lane_budget(tmp_path: Path, monkeypatch):
+    db_path = tmp_path / 'mgap.db'
+    create_schema_at_default_path(db_path)
+    base_settings = _make_settings(db_path)
+
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            '''
+            INSERT INTO paper_candidate_normalized (
+                candidate_id, norm_title, norm_title_key, first_author_family, venue_guess, year_guess
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            ''',
+            ('cand_cache_budget', 'Cached Budget Title', 'cached budget title', 'Wu', 'Nature', '2026'),
+        )
+        conn.commit()
+
+    calls = {'count': 0}
+
+    def fake_query_crossref(candidate_id: str, **kwargs):
+        calls['count'] += 1
+        return EnrichmentRecord(
+            candidate_id=candidate_id,
+            source_name='crossref',
+            query_type='title',
+            query_string='Cached Budget Title',
+            matched=True,
+            match_score=0.99,
+            external_id='crossref:cached-budget',
+            title='Cached Budget Title',
+            authors_json=json.dumps(['Yue Wu'], ensure_ascii=False),
+            abstract=None,
+            venue='Nature',
+            year='2026',
+            publication_type='journal-article',
+            doi='10.1000/cached-budget',
+            pmid=None,
+            pmcid=None,
+            url='https://doi.org/10.1000/cached-budget',
+            raw_payload_json=json.dumps({'status': 'ok', 'doi': '10.1000/cached-budget'}, ensure_ascii=False),
+            latency_ms=42,
+        )
+
+    monkeypatch.setattr('mygooglealertpapers.pipeline.enrich.query_crossref', fake_query_crossref)
+    enrich_candidates(base_settings, limit=10)
+    assert calls['count'] == 1
+
+    with sqlite3.connect(db_path) as conn:
+        conn.execute('DELETE FROM candidate_enrichment_status WHERE candidate_id = ?', ('cand_cache_budget',))
+        conn.execute('DELETE FROM source_record WHERE candidate_id = ?', ('cand_cache_budget',))
+        conn.execute('DELETE FROM cost_event')
+        conn.execute('DELETE FROM batch_run')
+        conn.commit()
+
+    budget_settings = _make_settings(
+        db_path,
+        runtime_rules={
+            'enabled_lanes': ['title_core'],
+            'lane_request_budgets': {'title_core': 0},
+        },
+    )
+
+    def unexpected_query_crossref(candidate_id: str, **kwargs):
+        raise AssertionError('cache hit should not trigger a provider request')
+
+    monkeypatch.setattr('mygooglealertpapers.pipeline.enrich.query_crossref', unexpected_query_crossref)
+    enrich_candidates(budget_settings, limit=10)
+
+    with sqlite3.connect(db_path) as conn:
+        source_count = conn.execute(
+            'SELECT COUNT(*) FROM source_record WHERE candidate_id = ? AND source_name = ?',
+            ('cand_cache_budget', 'crossref'),
+        ).fetchone()[0]
+        assert source_count == 1
+        notes = conn.execute(
+            "SELECT notes FROM batch_run WHERE stage = 'enrich_candidates' ORDER BY id DESC LIMIT 1"
+        ).fetchone()[0]
+        stats = json.loads(notes)
+        assert stats['lane_request_budgets'] == {'title_core': 0}
+        assert stats['lane_dispatch_request_count'] == {'title_core': 0}
+        assert stats['dispatch_request_count'] == 0
+        assert stats['cache_hit_group_count'] == 1
+        assert stats['processed_runnable_intents'] == 1
+        assert stats['lane_processed_intents'] == {'title_core': 1}
+        assert stats['lane_stop_reasons'] == {}

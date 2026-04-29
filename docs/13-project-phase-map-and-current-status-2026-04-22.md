@@ -95,6 +95,7 @@ What these established:
 - Day 3 dispatch/cache/runtime changes did not break the validated merge/dedup path
 - narrow-scope title payload reuse was promoted only after deterministic recorded-payload replay showed zero candidate-level semantic drift on the medium60 comparison
 - explicit runtime lane gating is now viable: `identifier_fastpath` is a stable live core, and `identifier_fastpath + title_core` is the current best candidate for the synchronous default path
+- explicit per-lane stop conditions are now also viable: a budget-capped `title_core` run stops cleanly, records its stop reason in dispatch stats, and yields a controllable coverage/runtime tradeoff instead of a timeout boundary
 
 ## Active document set to read now
 
@@ -119,7 +120,7 @@ The next useful validation is:
 - preserve the current promoted mainline/runtime defaults
 - treat `identifier_fastpath + title_core` as the primary live-lane candidate
 - keep `biomedical_fallback` and `slow_fallback` outside the synchronous default path until separately budgeted
-- prioritize request-reduction inside the title core lane, especially `crossref` title cost, while keeping judgment on fixed-seed replay
+- tune `title_core` budget shape and prioritize request-reduction inside that lane, especially `crossref` title cost, while keeping judgment on fixed-seed replay
 
 ## Immediate next-step direction
 
@@ -128,7 +129,7 @@ The most promising next phase is no longer broad policy exploration. It is **pro
 Recommended order:
 1. keep `identifier_fastpath` as the guaranteed live base lane
 2. optimize the `title_core` lane as the main synchronous extension, with special focus on `crossref` title cost
-3. add explicit lane budgets / stop conditions before attempting provider concurrency
+3. tune explicit lane budgets / stop conditions before attempting provider concurrency
 4. keep every new scheduling optimization behind fixed-seed replay and, when needed, recorded-payload replay
 5. avoid changing match standards unless a new correctness problem appears
 

@@ -1,0 +1,49 @@
+profile_name: openalex_batching_identifier_plus_title_core_budget60
+summary: >
+  Provider-lane budget experiment: keep identifier_fastpath plus title_core lanes,
+  but cap title_core at 60 dispatch requests to force an early synchronous stop.
+notes:
+  - Inherit current mainline matching and merge behavior
+  - Keep identifier_fastpath fully open
+  - Apply an explicit request budget only to title_core
+provider_rules:
+  crossref:
+    enabled: true
+    title_payload_reuse_enabled: true
+  openalex:
+    enabled: true
+    doi_batch_enabled: true
+    title_payload_reuse_enabled: true
+  semanticscholar:
+    enabled: true
+    title_payload_reuse_enabled: true
+  pubmed:
+    enabled: true
+    fallback_only_for_core_fields: true
+  europepmc:
+    enabled: true
+    trigger_mode: narrowed_biomedical_fallback
+  arxiv:
+    enabled: true
+    trigger_mode: arxiv_native_only
+merge_rules:
+  pubmed_title_doi_suppression: true
+  normalized_only_fallback: true
+  fallback_reject_author_blob_identifier_aware: true
+runtime_rules:
+  lane_order:
+    - identifier_fastpath
+    - title_core
+    - biomedical_fallback
+    - slow_fallback
+  enabled_lanes:
+    - identifier_fastpath
+    - title_core
+  lane_request_budgets:
+    title_core: 60
+replay_defaults:
+  stages:
+    - normalize
+    - enrich
+    - merge
+    - dedup

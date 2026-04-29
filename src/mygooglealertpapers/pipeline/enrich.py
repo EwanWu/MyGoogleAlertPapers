@@ -132,6 +132,102 @@ def _enabled_lanes(settings: Settings) -> set[str] | None:
     return {str(value)}
 
 
+def _lane_request_budgets(settings: Settings) -> dict[str, int]:
+    value = _runtime_value(settings, 'lane_request_budgets', {})
+    if not isinstance(value, dict):
+        return {}
+    result: dict[str, int] = {}
+    for lane, budget in value.items():
+        if budget in (None, ''):
+            continue
+        result[str(lane)] = int(budget)
+    return result
+
+
+def _lane_runtime_budget_seconds(settings: Settings) -> dict[str, float]:
+    value = _runtime_value(settings, 'lane_runtime_budget_seconds', {})
+    if not isinstance(value, dict):
+        return {}
+    result: dict[str, float] = {}
+    for lane, budget in value.items():
+        if budget in (None, ''):
+            continue
+        result[str(lane)] = float(budget)
+    return result
+
+
+def _refresh_lane_elapsed(dispatch_stats: dict[str, object], lane_runtime_state: dict[str, dict[str, float] | str | None]) -> None:
+    lane_started_at = lane_runtime_state.get('lane_started_at', {})
+    lane_ended_at = lane_runtime_state.get('lane_ended_at', {})
+    now = time.perf_counter()
+    dispatch_stats['lane_elapsed_ms'] = {
+        lane: int(((lane_ended_at.get(lane) or now) - started_at) * 1000)
+        for lane, started_at in lane_started_at.items()
+    }
+
+
+def _record_lane_stop(dispatch_stats: dict[str, object], lane: str, reason: str) -> str:
+    stop_reasons = dispatch_stats.setdefault('lane_stop_reasons', {})
+    stop_reasons.setdefault(lane, reason)
+    return stop_reasons[lane]
+
+
+def _record_lane_skip(dispatch_stats: dict[str, object], group: DispatchGroup, *, reason: str) -> None:
+    lane = _lane_for_group(group)
+    skipped_groups = dispatch_stats.setdefault('lane_skipped_group_count', {})
+    skipped_intents = dispatch_stats.setdefault('lane_skipped_intents', {})
+    skip_reasons = dispatch_stats.setdefault('lane_skip_reasons', {})
+    skipped_groups[lane] = int(skipped_groups.get(lane, 0) or 0) + 1
+    skipped_intents[lane] = int(skipped_intents.get(lane, 0) or 0) + len(group.intents)
+    skip_reasons.setdefault(lane, reason)
+
+
+def _lane_budget_stop_reason(
+    settings: Settings,
+    dispatch_stats: dict[str, object],
+    lane_runtime_state: dict[str, dict[str, float] | str | None],
+    lane: str,
+    *,
+    next_request_cost: int = 1,
+) -> str | None:
+    existing = (dispatch_stats.get('lane_stop_reasons') or {}).get(lane)
+    if existing:
+        return str(existing)
+
+    request_budgets = _lane_request_budgets(settings)
+    current_requests = int((dispatch_stats.get('lane_dispatch_request_count') or {}).get(lane, 0) or 0)
+    request_budget = request_budgets.get(lane)
+    if request_budget is not None and current_requests + next_request_cost > request_budget:
+        lane_ended_at = lane_runtime_state.setdefault('lane_ended_at', {})
+        if isinstance(lane_ended_at, dict):
+            lane_ended_at.setdefault(lane, time.perf_counter())
+        return _record_lane_stop(dispatch_stats, lane, 'request_budget_exhausted')
+
+    runtime_budgets = _lane_runtime_budget_seconds(settings)
+    runtime_budget = runtime_budgets.get(lane)
+    lane_started_at = lane_runtime_state.get('lane_started_at', {}).get(lane)
+    if runtime_budget is not None and lane_started_at is not None:
+        if (time.perf_counter() - lane_started_at) >= runtime_budget:
+            lane_ended_at = lane_runtime_state.setdefault('lane_ended_at', {})
+            if isinstance(lane_ended_at, dict):
+                lane_ended_at.setdefault(lane, time.perf_counter())
+            return _record_lane_stop(dispatch_stats, lane, 'runtime_budget_exhausted')
+
+    return None
+
+
+def _mark_lane_request_started(lane_runtime_state: dict[str, dict[str, float] | str | None], lane: str) -> None:
+    now = time.perf_counter()
+    active_lane = lane_runtime_state.get('active_lane')
+    lane_ended_at = lane_runtime_state.setdefault('lane_ended_at', {})
+    if isinstance(active_lane, str) and active_lane != lane and isinstance(lane_ended_at, dict):
+        lane_ended_at.setdefault(active_lane, now)
+    lane_started_at = lane_runtime_state.setdefault('lane_started_at', {})
+    if isinstance(lane_started_at, dict):
+        lane_started_at.setdefault(lane, now)
+    lane_runtime_state['active_lane'] = lane
+
+
 def _prepare_dispatch_groups(settings: Settings, runnable_intents: list[ProviderIntent]) -> tuple[list[DispatchGroup], dict[str, int], dict[str, int]]:
     base_groups = _build_dispatch_groups(settings, runnable_intents)
     enabled_lanes = _enabled_lanes(settings)
@@ -547,6 +643,13 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
             'lane_intent_counts': lane_intent_counts,
             'lane_processed_intents': {lane: 0 for lane in lane_intent_counts},
             'lane_dispatch_request_count': {lane: 0 for lane in lane_group_counts},
+            'lane_request_budgets': _lane_request_budgets(settings) or None,
+            'lane_runtime_budget_seconds': _lane_runtime_budget_seconds(settings) or None,
+            'lane_stop_reasons': {},
+            'lane_skipped_group_count': {},
+            'lane_skipped_intents': {},
+            'lane_skip_reasons': {},
+            'lane_elapsed_ms': {},
             'openalex_batch_request_count': 0,
             'non_batch_dispatch_request_count': 0,
             'cache_hit_group_count': 0,
@@ -556,6 +659,12 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
             'shared_title_reuse_request_count': 0,
             'shared_title_reuse_request_savings': 0,
         }
+        lane_runtime_state: dict[str, dict[str, float] | str | None] = {
+            'lane_started_at': {},
+            'lane_ended_at': {},
+            'active_lane': None,
+        }
+        _refresh_lane_elapsed(dispatch_stats, lane_runtime_state)
         _persist_dispatch_progress(repo, conn, run_id=run_id, started_at=started_at, processed_intents=0, dispatch_stats=dispatch_stats)
         conn.commit()
         openalex_doi_groups = [
@@ -572,12 +681,23 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
                 if not doi_val:
                     continue
                 doi_to_group[doi_val] = group
-                _start_group_statuses(repo, conn, group, query_type_override='doi_batch', notes='planned_batch')
             doi_values = list(doi_to_group.keys())
             for i in range(0, len(doi_values), 50):
                 chunk = doi_values[i:i + 50]
+                lane = 'identifier_fastpath'
+                stop_reason = _lane_budget_stop_reason(settings, dispatch_stats, lane_runtime_state, lane)
+                if stop_reason is not None:
+                    for doi_val in chunk:
+                        group = doi_to_group[doi_val]
+                        _record_lane_skip(dispatch_stats, group, reason=stop_reason)
+                        handled_group_keys.add((group.provider, group.query_type, group.query_key))
+                    continue
+                _mark_lane_request_started(lane_runtime_state, lane)
+                for doi_val in chunk:
+                    group = doi_to_group[doi_val]
+                    _start_group_statuses(repo, conn, group, query_type_override='doi_batch', notes='planned_batch')
                 dispatch_stats['openalex_batch_request_count'] += 1
-                _bump_lane_request(dispatch_stats, 'identifier_fastpath')
+                _bump_lane_request(dispatch_stats, lane)
                 logger.info('OpenAlex DOI batch chunk %s-%s / %s DOI(s)', i + 1, i + len(chunk), len(doi_values))
                 try:
                     results = query_openalex_batch_by_doi(chunk, email=settings.openalex_email)
@@ -659,6 +779,7 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
                     processed_intents += delta
                     _bump_lane_processed(dispatch_stats, group, delta)
                     handled_group_keys.add((group.provider, group.query_type, group.query_key))
+                _refresh_lane_elapsed(dispatch_stats, lane_runtime_state)
                 _persist_dispatch_progress(repo, conn, run_id=run_id, started_at=started_at, processed_intents=processed_intents, dispatch_stats=dispatch_stats)
                 conn.commit()
 
@@ -666,6 +787,8 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
             group_key = (group.provider, group.query_type, group.query_key)
             if group_key in handled_group_keys:
                 continue
+
+            lane = _lane_for_group(group)
 
             logger.info(
                 'Enrich dispatch %s/%s: provider=%s query_type=%s query_key=%s fanout=%s',
@@ -679,8 +802,6 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
             _start_group_statuses(repo, conn, group)
             field_set_hash = _group_field_set_hash(group)
             cached = repo.get_query_cache(conn, provider=group.provider, query_type=group.query_type, query_key=group.query_key, field_set_hash=field_set_hash)
-            dispatch_stats['non_batch_dispatch_request_count'] += 1
-            _bump_lane_request(dispatch_stats, _lane_for_group(group))
             if cached:
                 cached_rec = enrichment_record_from_json(cached[0])
                 if cache_status_from_record(cached_rec) != 'transient_error':
@@ -691,10 +812,19 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
                     _bump_lane_processed(dispatch_stats, group, delta)
                     if processed_intents % PROGRESS_EVERY == 0:
                         logger.info('Enrich progress: processed %s / %s runnable intent(s)', processed_intents, len(runnable_intents))
+                        _refresh_lane_elapsed(dispatch_stats, lane_runtime_state)
                         _persist_dispatch_progress(repo, conn, run_id=run_id, started_at=started_at, processed_intents=processed_intents, dispatch_stats=dispatch_stats)
                         conn.commit()
                     continue
 
+            stop_reason = _lane_budget_stop_reason(settings, dispatch_stats, lane_runtime_state, lane)
+            if stop_reason is not None:
+                _record_lane_skip(dispatch_stats, group, reason=stop_reason)
+                continue
+
+            _mark_lane_request_started(lane_runtime_state, lane)
+            dispatch_stats['non_batch_dispatch_request_count'] += 1
+            _bump_lane_request(dispatch_stats, lane)
             shared_title_reuse = group.query_type == 'title' and len(group.intents) > 1 and _provider_title_payload_reuse_enabled(settings, group.provider)
             if shared_title_reuse:
                 try:
@@ -728,6 +858,7 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
                     _bump_lane_processed(dispatch_stats, group, delta)
                     if processed_intents % PROGRESS_EVERY == 0:
                         logger.info('Enrich progress: processed %s / %s runnable intent(s)', processed_intents, len(runnable_intents))
+                        _refresh_lane_elapsed(dispatch_stats, lane_runtime_state)
                         _persist_dispatch_progress(repo, conn, run_id=run_id, started_at=started_at, processed_intents=processed_intents, dispatch_stats=dispatch_stats)
                         conn.commit()
                     continue
@@ -751,6 +882,7 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
                     _bump_lane_processed(dispatch_stats, group, delta)
                     if processed_intents % PROGRESS_EVERY == 0:
                         logger.info('Enrich progress: processed %s / %s runnable intent(s)', processed_intents, len(runnable_intents))
+                        _refresh_lane_elapsed(dispatch_stats, lane_runtime_state)
                         _persist_dispatch_progress(repo, conn, run_id=run_id, started_at=started_at, processed_intents=processed_intents, dispatch_stats=dispatch_stats)
                         conn.commit()
                     continue
@@ -786,6 +918,7 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
                 _bump_lane_processed(dispatch_stats, group, delta)
                 if processed_intents % PROGRESS_EVERY == 0:
                     logger.info('Enrich progress: processed %s / %s runnable intent(s)', processed_intents, len(runnable_intents))
+                    _refresh_lane_elapsed(dispatch_stats, lane_runtime_state)
                     _persist_dispatch_progress(repo, conn, run_id=run_id, started_at=started_at, processed_intents=processed_intents, dispatch_stats=dispatch_stats)
                     conn.commit()
                 continue
@@ -819,6 +952,7 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
                 _bump_lane_processed(dispatch_stats, group, delta)
                 if processed_intents % PROGRESS_EVERY == 0:
                     logger.info('Enrich progress: processed %s / %s runnable intent(s)', processed_intents, len(runnable_intents))
+                    _refresh_lane_elapsed(dispatch_stats, lane_runtime_state)
                     _persist_dispatch_progress(repo, conn, run_id=run_id, started_at=started_at, processed_intents=processed_intents, dispatch_stats=dispatch_stats)
                     conn.commit()
                 continue
@@ -829,9 +963,11 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
             _bump_lane_processed(dispatch_stats, group, delta)
             if processed_intents % PROGRESS_EVERY == 0:
                 logger.info('Enrich progress: processed %s / %s runnable intent(s)', processed_intents, len(runnable_intents))
+                _refresh_lane_elapsed(dispatch_stats, lane_runtime_state)
                 _persist_dispatch_progress(repo, conn, run_id=run_id, started_at=started_at, processed_intents=processed_intents, dispatch_stats=dispatch_stats)
                 conn.commit()
 
+        _refresh_lane_elapsed(dispatch_stats, lane_runtime_state)
         dispatch_stats['dispatch_request_count'] = dispatch_stats['openalex_batch_request_count'] + dispatch_stats['non_batch_dispatch_request_count']
         dispatch_stats['request_savings_vs_runnable_intents'] = dispatch_stats['runnable_provider_intents'] - dispatch_stats['dispatch_request_count']
         dispatch_stats['processed_runnable_intents'] = processed_intents

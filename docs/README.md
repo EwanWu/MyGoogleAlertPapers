@@ -32,7 +32,7 @@ Read these first when you want the current project state, current default flow, 
 
 ### Current runtime / provider-lane validation
 
-- `docs/validation/day5-provider-lane-ablation-120-20260429.md` — first explicit runtime-lane ablation showing that `identifier_fastpath` is a safe live core and `identifier_fastpath + title_core` stays inside a practical slice120 runtime budget, while slow fallback lanes remain the defer target
+- `docs/validation/day5-provider-lane-ablation-120-20260429.md` — current runtime-lane memo covering both lane gating and the first budgeted title-core stop-condition replay; establishes `identifier_fastpath` as the safe live core, `identifier_fastpath + title_core` as the main synchronous candidate, and budget-capped `title_core` as a viable stricter live mode
 
 ### Current operations / data-acquisition validation
 
