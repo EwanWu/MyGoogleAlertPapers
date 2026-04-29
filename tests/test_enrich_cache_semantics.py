@@ -173,6 +173,7 @@ def test_enrich_candidates_dispatch_dedups_identical_title_queries(tmp_path: Pat
         )
 
     monkeypatch.setattr('mygooglealertpapers.pipeline.enrich.query_crossref', fake_query_crossref)
+    monkeypatch.setattr('mygooglealertpapers.pipeline.enrich.PROGRESS_EVERY', 1)
 
     enrich_candidates(settings, limit=10)
 

@@ -1,0 +1,95 @@
+{
+  "status": "failed",
+  "failed_stage": "enrich",
+  "error_message": "stage timed out after 1799s: python3 -m mygooglealertpapers.cli enrich-candidates --limit 368",
+  "source_db": "/home/ewan/NewCareer/Openclaw/proj/MyGoogleAlertPapers/data/mgap_pkgB_large_slice150_seed_20260416_slice150.db",
+  "output_db": "/home/ewan/NewCareer/Openclaw/proj/MyGoogleAlertPapers/data/benchmark/day4_openalex_batching_observed_slice150_20260427.db",
+  "policy_profile": "/home/ewan/NewCareer/Openclaw/proj/MyGoogleAlertPapers/config/policy_profiles/conditional_sources_v2_author_blob_fallback_only.yaml",
+  "policy_profile_name": "conditional_sources_v2_author_blob_fallback_only",
+  "http_fixture_record": null,
+  "http_fixture_replay": null,
+  "stages": [
+    "enrich",
+    "merge",
+    "dedup"
+  ],
+  "source_candidate_count": 368,
+  "replay_candidate_count": 368,
+  "normalized_candidate_count": 368,
+  "dirty_doi_source_count": 0,
+  "dirty_doi_output_count": 0,
+  "dirty_doi_repaired_count": 0,
+  "provider_intent_count": 800,
+  "source_record_count": 800,
+  "matched_source_record_count": 518,
+  "merged_metadata_proposal_count": 0,
+  "normalized_only_fallback_proposal_count": 0,
+  "canonical_paper_count": 0,
+  "merge_review_queue_count": 0,
+  "cost_event_count": 800,
+  "batch_run_count": 1,
+  "severe_doi_conflict_count": 0,
+  "total_batch_duration_ms": 1779809,
+  "total_provider_latency_ms": 1768445,
+  "provider_summary": [
+    {
+      "provider": "arxiv",
+      "events": 2,
+      "total_latency_ms": 4402,
+      "estimated_cost_usd": 0.0
+    },
+    {
+      "provider": "crossref",
+      "events": 187,
+      "total_latency_ms": 406405,
+      "estimated_cost_usd": 0.0
+    },
+    {
+      "provider": "europepmc",
+      "events": 80,
+      "total_latency_ms": 132701,
+      "estimated_cost_usd": 0.0
+    },
+    {
+      "provider": "openalex",
+      "events": 265,
+      "total_latency_ms": 200930,
+      "estimated_cost_usd": 0.0
+    },
+    {
+      "provider": "pubmed",
+      "events": 80,
+      "total_latency_ms": 178273,
+      "estimated_cost_usd": 0.0
+    },
+    {
+      "provider": "semanticscholar",
+      "events": 186,
+      "total_latency_ms": 845734,
+      "estimated_cost_usd": 0.0
+    }
+  ],
+  "enrich_dispatch_summary": {
+    "planned_provider_intents": 1405,
+    "runnable_provider_intents": 1405,
+    "dispatch_group_count": 1149,
+    "openalex_batch_request_count": 3,
+    "non_batch_dispatch_request_count": 535,
+    "cache_hit_group_count": 0,
+    "fanout_candidate_count": 256,
+    "shared_title_reuse_group_count": 42,
+    "shared_title_reuse_intent_count": 90,
+    "shared_title_reuse_request_count": 42,
+    "shared_title_reuse_request_savings": 48,
+    "dispatch_request_count": 538,
+    "request_savings_vs_runnable_intents": 867,
+    "processed_runnable_intents": 800,
+    "request_savings_vs_total_planned_intents": 867,
+    "request_savings_vs_processed_intents": 262,
+    "processed_runnable_fraction": 0.5693950177935944
+  },
+  "paid_llm_usage": {
+    "present": false,
+    "note": "No paid LLM call path was exercised in this replay run."
+  }
+}

@@ -222,14 +222,30 @@ class Repository:
             (run_id, stage, requested_limit, 'running', notes),
         )
 
+    def update_batch_run_progress(self, conn: sqlite3.Connection, *, run_id: str, duration_ms: int, processed_count: int, notes: str | None = None) -> None:
+        conn.execute(
+            """
+            UPDATE batch_run
+            SET duration_ms = ?,
+                processed_count = ?,
+                notes = CASE WHEN ? IS NULL THEN notes ELSE ? END
+            WHERE run_id = ?
+            """,
+            (duration_ms, processed_count, notes, notes, run_id),
+        )
+
     def finish_batch_run(self, conn: sqlite3.Connection, *, run_id: str, duration_ms: int, processed_count: int, status: str, notes: str | None = None) -> None:
         conn.execute(
             """
             UPDATE batch_run
-            SET finished_at = CURRENT_TIMESTAMP, duration_ms = ?, processed_count = ?, status = ?, notes = COALESCE(notes, '') || COALESCE(?, '')
+            SET finished_at = CURRENT_TIMESTAMP,
+                duration_ms = ?,
+                processed_count = ?,
+                status = ?,
+                notes = CASE WHEN ? IS NULL THEN notes ELSE ? END
             WHERE run_id = ?
             """,
-            (duration_ms, processed_count, status, notes, run_id),
+            (duration_ms, processed_count, status, notes, notes, run_id),
         )
 
     def get_query_cache(self, conn: sqlite3.Connection, *, provider: str, query_type: str, query_key: str, field_set_hash: str = 'default', include_transient: bool = False):

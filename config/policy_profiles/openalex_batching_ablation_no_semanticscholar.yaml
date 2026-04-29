@@ -1,0 +1,40 @@
+profile_name: openalex_batching_ablation_no_semanticscholar
+summary: >
+  Ablation experiment profile: same as conditional_sources_v2_author_blob_fallback_only
+  but with semanticscholar DISABLED.
+  Purpose: isolate whether semanticscholar is the primary throughput bottleneck
+  in the live enrich fanout.
+notes:
+  - Inherit all conditional_sources_v2_author_blob_fallback_only routing and fallback behavior
+  - Only change: semanticscholar.enabled = false
+  - This isolates semanticscholar latency from the full live enrich fanout
+provider_rules:
+  crossref:
+    enabled: true
+    title_payload_reuse_enabled: true
+  openalex:
+    enabled: true
+    doi_batch_enabled: true
+    title_payload_reuse_enabled: true
+  semanticscholar:
+    enabled: false
+    title_payload_reuse_enabled: false
+  pubmed:
+    enabled: true
+    fallback_only_for_core_fields: true
+  europepmc:
+    enabled: true
+    trigger_mode: narrowed_biomedical_fallback
+  arxiv:
+    enabled: true
+    trigger_mode: arxiv_native_only
+merge_rules:
+  pubmed_title_doi_suppression: true
+  normalized_only_fallback: true
+  fallback_reject_author_blob_identifier_aware: true
+replay_defaults:
+  stages:
+    - normalize
+    - enrich
+    - merge
+    - dedup

@@ -181,6 +181,24 @@ def run_mgap(project_root: Path, python_bin: str, sqlite_path: Path, policy_prof
     subprocess.run(cmd, cwd=project_root, env=env, check=True, timeout=timeout_seconds or None)
 
 
+def _normalize_dispatch_summary(dispatch: dict[str, object] | None) -> dict[str, object]:
+    if not isinstance(dispatch, dict):
+        return {}
+    payload = dict(dispatch)
+    runnable = int(payload.get('runnable_provider_intents') or 0)
+    processed = int(payload.get('processed_runnable_intents') or runnable or 0)
+    requests = payload.get('dispatch_request_count')
+    if requests is not None:
+        requests = int(requests)
+        payload['dispatch_request_count'] = requests
+        payload['request_savings_vs_total_planned_intents'] = runnable - requests
+        payload['request_savings_vs_processed_intents'] = processed - requests
+    payload['processed_runnable_intents'] = processed
+    if runnable:
+        payload['processed_runnable_fraction'] = processed / runnable
+    return payload
+
+
 def render_markdown(summary: dict[str, object]) -> str:
     provider_lines = []
     for row in summary["provider_summary"]:
@@ -188,7 +206,7 @@ def render_markdown(summary: dict[str, object]) -> str:
             f"- {row['provider']}: events={row['events']}, total_latency_ms={row['total_latency_ms']}, estimated_cost_usd={row['estimated_cost_usd']:.6f}"
         )
     llm = summary.get("paid_llm_usage") or {}
-    dispatch = summary.get("enrich_dispatch_summary") or {}
+    dispatch = _normalize_dispatch_summary(summary.get("enrich_dispatch_summary"))
     if summary.get("status") == "failed":
         return "\n".join(
             [
@@ -224,7 +242,9 @@ def render_markdown(summary: dict[str, object]) -> str:
                 f"- paid_llm_usage_present: `{llm.get('present', False)}`",
                 f"- paid_llm_note: `{llm.get('note', 'n/a')}`",
                 f"- dispatch_request_count: `{dispatch.get('dispatch_request_count', 'n/a')}`",
-                f"- request_savings_vs_runnable_intents: `{dispatch.get('request_savings_vs_runnable_intents', 'n/a')}`",
+                f"- processed_runnable_intents: `{dispatch.get('processed_runnable_intents', 'n/a')}` / `{dispatch.get('runnable_provider_intents', 'n/a')}`",
+                f"- request_savings_vs_processed_intents: `{dispatch.get('request_savings_vs_processed_intents', 'n/a')}`",
+                f"- request_savings_vs_total_planned_intents: `{dispatch.get('request_savings_vs_total_planned_intents', dispatch.get('request_savings_vs_runnable_intents', 'n/a'))}`",
                 f"- shared_title_reuse_group_count: `{dispatch.get('shared_title_reuse_group_count', 'n/a')}`",
                 f"- shared_title_reuse_request_savings: `{dispatch.get('shared_title_reuse_request_savings', 'n/a')}`",
                 "",
@@ -270,7 +290,9 @@ def render_markdown(summary: dict[str, object]) -> str:
             f"- paid_llm_usage_present: `{llm.get('present', False)}`",
             f"- paid_llm_note: `{llm.get('note', 'n/a')}`",
             f"- dispatch_request_count: `{dispatch.get('dispatch_request_count', 'n/a')}`",
-            f"- request_savings_vs_runnable_intents: `{dispatch.get('request_savings_vs_runnable_intents', 'n/a')}`",
+            f"- processed_runnable_intents: `{dispatch.get('processed_runnable_intents', 'n/a')}` / `{dispatch.get('runnable_provider_intents', 'n/a')}`",
+            f"- request_savings_vs_processed_intents: `{dispatch.get('request_savings_vs_processed_intents', 'n/a')}`",
+            f"- request_savings_vs_total_planned_intents: `{dispatch.get('request_savings_vs_total_planned_intents', dispatch.get('request_savings_vs_runnable_intents', 'n/a'))}`",
             f"- shared_title_reuse_group_count: `{dispatch.get('shared_title_reuse_group_count', 'n/a')}`",
             f"- shared_title_reuse_request_savings: `{dispatch.get('shared_title_reuse_request_savings', 'n/a')}`",
             "",
@@ -385,7 +407,7 @@ def main() -> None:
             "total_batch_duration_ms": count_scalar(conn, "SELECT COALESCE(SUM(duration_ms),0) FROM batch_run"),
             "total_provider_latency_ms": count_scalar(conn, "SELECT COALESCE(SUM(latency_ms),0) FROM cost_event WHERE provider IS NOT NULL"),
             "provider_summary": provider_summary(conn),
-            "enrich_dispatch_summary": enrich_dispatch_summary(conn),
+            "enrich_dispatch_summary": _normalize_dispatch_summary(enrich_dispatch_summary(conn)),
             "paid_llm_usage": {
                 "present": False,
                 "note": "No paid LLM call path was exercised in this replay run.",

@@ -324,6 +324,20 @@ def _fanout_result_to_group(repo: Repository, tracker: CostTracker, conn, group:
     return _fanout_records_to_group(repo, tracker, conn, group, [rec for _ in group.intents], cache_hit=cache_hit, notes=notes)
 
 
+def _persist_dispatch_progress(repo: Repository, conn, *, run_id: str, started_at: float, processed_intents: int, dispatch_stats: dict[str, object]) -> None:
+    payload = dict(dispatch_stats)
+    payload['dispatch_request_count'] = payload.get('openalex_batch_request_count', 0) + payload.get('non_batch_dispatch_request_count', 0)
+    payload['request_savings_vs_runnable_intents'] = payload.get('runnable_provider_intents', 0) - payload['dispatch_request_count']
+    payload['processed_runnable_intents'] = processed_intents
+    repo.update_batch_run_progress(
+        conn,
+        run_id=run_id,
+        duration_ms=int((time.perf_counter() - started_at) * 1000),
+        processed_count=processed_intents,
+        notes=json.dumps(payload, ensure_ascii=False),
+    )
+
+
 def _fanout_error_to_group(repo: Repository, tracker: CostTracker, conn, group: DispatchGroup, *, error_summary: str, notes: str | None = None) -> int:
     for intent in group.intents:
         repo.finish_enrichment_status(conn, candidate_id=intent.candidate_id, provider=intent.provider, status='error', latency_ms=0, error_summary=error_summary, notes=notes)
@@ -461,6 +475,8 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
             'shared_title_reuse_request_count': 0,
             'shared_title_reuse_request_savings': 0,
         }
+        _persist_dispatch_progress(repo, conn, run_id=run_id, started_at=started_at, processed_intents=0, dispatch_stats=dispatch_stats)
+        conn.commit()
         openalex_doi_groups = [
             group for group in dispatch_groups
             if openalex_doi_batch_enabled and group.provider == 'openalex' and group.query_type == 'doi' and group.representative.doi
@@ -555,6 +571,7 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
                     repo.put_query_cache(conn, provider='openalex', query_type='doi', query_key=doi_val, response_json=enrichment_record_to_json(rec), **cache_metadata_from_record(rec, field_set_hash=_group_field_set_hash(group)))
                     processed_intents += _fanout_result_to_group(repo, tracker, conn, group, rec, cache_hit=False, notes='doi_batch_no_match')
                     handled_group_keys.add((group.provider, group.query_type, group.query_key))
+                _persist_dispatch_progress(repo, conn, run_id=run_id, started_at=started_at, processed_intents=processed_intents, dispatch_stats=dispatch_stats)
                 conn.commit()
 
         for group in dispatch_groups:
@@ -583,6 +600,7 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
                     processed_intents += _fanout_result_to_group(repo, tracker, conn, group, rec, cache_hit=True)
                     if processed_intents % PROGRESS_EVERY == 0:
                         logger.info('Enrich progress: processed %s / %s runnable intent(s)', processed_intents, len(runnable_intents))
+                        _persist_dispatch_progress(repo, conn, run_id=run_id, started_at=started_at, processed_intents=processed_intents, dispatch_stats=dispatch_stats)
                         conn.commit()
                     continue
 
@@ -617,6 +635,7 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
                     processed_intents += _fanout_error_to_group(repo, tracker, conn, group, error_summary=str(exc), notes='shared_title_reuse_error')
                     if processed_intents % PROGRESS_EVERY == 0:
                         logger.info('Enrich progress: processed %s / %s runnable intent(s)', processed_intents, len(runnable_intents))
+                        _persist_dispatch_progress(repo, conn, run_id=run_id, started_at=started_at, processed_intents=processed_intents, dispatch_stats=dispatch_stats)
                         conn.commit()
                     continue
 
@@ -637,6 +656,7 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
                     processed_intents += _fanout_records_to_group(repo, tracker, conn, group, records, cache_hit=False, notes='shared_title_reuse')
                     if processed_intents % PROGRESS_EVERY == 0:
                         logger.info('Enrich progress: processed %s / %s runnable intent(s)', processed_intents, len(runnable_intents))
+                        _persist_dispatch_progress(repo, conn, run_id=run_id, started_at=started_at, processed_intents=processed_intents, dispatch_stats=dispatch_stats)
                         conn.commit()
                     continue
 
@@ -669,6 +689,7 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
                 processed_intents += _fanout_error_to_group(repo, tracker, conn, group, error_summary=str(exc))
                 if processed_intents % PROGRESS_EVERY == 0:
                     logger.info('Enrich progress: processed %s / %s runnable intent(s)', processed_intents, len(runnable_intents))
+                    _persist_dispatch_progress(repo, conn, run_id=run_id, started_at=started_at, processed_intents=processed_intents, dispatch_stats=dispatch_stats)
                     conn.commit()
                 continue
 
@@ -699,6 +720,7 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
                 processed_intents += _fanout_result_to_group(repo, tracker, conn, group, rec, cache_hit=False, notes='no_record_returned')
                 if processed_intents % PROGRESS_EVERY == 0:
                     logger.info('Enrich progress: processed %s / %s runnable intent(s)', processed_intents, len(runnable_intents))
+                    _persist_dispatch_progress(repo, conn, run_id=run_id, started_at=started_at, processed_intents=processed_intents, dispatch_stats=dispatch_stats)
                     conn.commit()
                 continue
 
@@ -706,10 +728,12 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
             processed_intents += _fanout_result_to_group(repo, tracker, conn, group, rec, cache_hit=False)
             if processed_intents % PROGRESS_EVERY == 0:
                 logger.info('Enrich progress: processed %s / %s runnable intent(s)', processed_intents, len(runnable_intents))
+                _persist_dispatch_progress(repo, conn, run_id=run_id, started_at=started_at, processed_intents=processed_intents, dispatch_stats=dispatch_stats)
                 conn.commit()
 
         dispatch_stats['dispatch_request_count'] = dispatch_stats['openalex_batch_request_count'] + dispatch_stats['non_batch_dispatch_request_count']
         dispatch_stats['request_savings_vs_runnable_intents'] = dispatch_stats['runnable_provider_intents'] - dispatch_stats['dispatch_request_count']
+        dispatch_stats['processed_runnable_intents'] = processed_intents
         repo.finish_batch_run(
             conn,
             run_id=run_id,
