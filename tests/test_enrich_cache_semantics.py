@@ -1120,6 +1120,9 @@ def test_enrich_candidates_keeps_crossref_url_only_when_openalex_does_not_recove
         assert stats['post_openalex_suppressed_group_count'] == 0
         assert stats['post_openalex_unsuppressed_targeted_group_count'] == 1
         assert stats['post_openalex_unsuppressed_targeted_group_counts_by_reason'] == {'openalex_title_unmatched': 1}
+        assert stats['post_openalex_unsuppressed_targeted_group_counts_by_arxiv_bucket'] == {'without_arxiv_id': 1}
+        assert stats['post_openalex_unsuppressed_targeted_group_counts_by_reason_arxiv_bucket'] == {'openalex_title_unmatched|without_arxiv_id': 1}
+        assert stats['post_openalex_unsuppressed_targeted_group_counts_by_reason_title_subreason'] == {'openalex_title_unmatched|url_canonical_only': 1}
         assert stats['post_openalex_unsuppressed_targeted_group_counts_by_title_subreason'] == {'url_canonical_only': 1}
 
 
@@ -1220,6 +1223,9 @@ def test_enrich_candidates_records_post_openalex_unsuppressed_reason_when_match_
         assert stats['post_openalex_suppressed_group_count'] == 0
         assert stats['post_openalex_unsuppressed_targeted_group_count'] == 1
         assert stats['post_openalex_unsuppressed_targeted_group_counts_by_reason'] == {'openalex_title_match_without_doi': 1}
+        assert stats['post_openalex_unsuppressed_targeted_group_counts_by_arxiv_bucket'] == {'without_arxiv_id': 1}
+        assert stats['post_openalex_unsuppressed_targeted_group_counts_by_reason_arxiv_bucket'] == {'openalex_title_match_without_doi|without_arxiv_id': 1}
+        assert stats['post_openalex_unsuppressed_targeted_group_counts_by_reason_title_subreason'] == {'openalex_title_match_without_doi|url_canonical_only': 1}
         assert stats['post_openalex_unsuppressed_targeted_group_counts_by_title_subreason'] == {'url_canonical_only': 1}
 
 
@@ -1380,3 +1386,91 @@ def test_enrich_candidates_can_enable_openalex_pick_best_for_url_only(tmp_path: 
         stats = json.loads(notes)
         assert stats['openalex_title_per_page_by_subreason'] == {'url_canonical_only': 5}
         assert stats['openalex_title_pick_best_accepted_subreasons'] == ['url_canonical_only']
+
+
+def test_enrich_candidates_records_openalex_topk_gate_observability(tmp_path: Path, monkeypatch):
+    db_path = tmp_path / 'mgap.db'
+    create_schema_at_default_path(db_path)
+    settings = _make_settings(
+        db_path,
+        provider_rules={
+            'crossref': {'enabled': False},
+            'openalex': {'enabled': True},
+            'semanticscholar': {'enabled': False},
+            'pubmed': {'enabled': False},
+            'europepmc': {'enabled': False},
+            'arxiv': {'enabled': False},
+            'unpaywall': {'enabled': False},
+        },
+        runtime_rules={
+            'enabled_lanes': ['title_core'],
+            'openalex_title_per_page_by_subreason': {
+                'url_canonical_only': 5,
+            },
+            'openalex_title_pick_best_accepted_subreasons': ['url_canonical_only'],
+            'openalex_title_extra_result_require_arxiv_id_subreasons': ['url_canonical_only'],
+        },
+    )
+
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            '''
+            INSERT INTO paper_candidate_normalized (
+                candidate_id, norm_title, norm_title_key, first_author_family, venue_guess, year_guess, url_canonical
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''',
+            ('cand_url_only_gate_blocked', 'URL Only Gate Blocked Paper', 'url only gate blocked paper', 'Wu', 'Nature', '2026', 'https://example.org/paper/url-only-gate-blocked'),
+        )
+        conn.commit()
+
+    seen: dict[str, object] = {}
+
+    def fake_query_openalex(candidate_id: str, **kwargs):
+        seen['candidate_id'] = candidate_id
+        seen['title_per_page'] = kwargs.get('title_per_page')
+        seen['title_pick_best_accepted'] = kwargs.get('title_pick_best_accepted')
+        return EnrichmentRecord(
+            candidate_id=candidate_id,
+            source_name='openalex',
+            query_type='title',
+            query_string='URL Only Gate Blocked Paper',
+            matched=False,
+            match_score=None,
+            external_id=None,
+            title=None,
+            authors_json=None,
+            abstract=None,
+            venue=None,
+            year=None,
+            publication_type=None,
+            doi=None,
+            pmid=None,
+            pmcid=None,
+            url=None,
+            raw_payload_json=json.dumps({'status': 'no_match'}, ensure_ascii=False),
+            latency_ms=11,
+        )
+
+    monkeypatch.setattr('mygooglealertpapers.pipeline.enrich.query_openalex', fake_query_openalex)
+
+    enrich_candidates(settings, limit=10)
+
+    assert seen == {
+        'candidate_id': 'cand_url_only_gate_blocked',
+        'title_per_page': 1,
+        'title_pick_best_accepted': False,
+    }
+    with sqlite3.connect(db_path) as conn:
+        notes = conn.execute(
+            "SELECT notes FROM batch_run WHERE stage = 'enrich_candidates' ORDER BY id DESC LIMIT 1"
+        ).fetchone()[0]
+        stats = json.loads(notes)
+        assert stats['openalex_title_extra_result_require_arxiv_id_subreasons'] == ['url_canonical_only']
+        assert stats['openalex_title_extra_result_targeted_group_count'] == 1
+        assert stats['openalex_title_extra_result_targeted_group_counts_by_gate_status'] == {'blocked_missing_arxiv_id': 1}
+        assert stats['openalex_title_extra_result_targeted_group_counts_by_title_subreason'] == {'url_canonical_only': 1}
+        assert stats['openalex_title_extra_result_targeted_group_counts_by_gate_status_title_subreason'] == {
+            'blocked_missing_arxiv_id|url_canonical_only': 1
+        }
+        assert stats['openalex_title_extra_result_effective_group_count'] == 0
+        assert stats['openalex_title_extra_result_blocked_group_count'] == 1

@@ -1,0 +1,13 @@
+profile_name: openalex_batching_identifier_plus_title_core_same_batch_cluster_post_openalex_skip_crossref_url_only_targeted_nonarxiv_reject71_review08
+summary: >
+  Deterministic cleanup candidate for the non-arXiv post-openalex residual
+  url-only subgroup. Reject very-low-similarity normalized-only fallback cases
+  at <=0.71, and keep a narrower review band at <=0.80 for the remaining
+  ambiguous subgroup.
+notes:
+  - Built from day11 subgroup-aware non-arXiv truth audit
+  - Intended for current default post-openalex skip-crossref-url-only runtime
+  - Two-stage policy: reject strongest mismatches, review only the borderline tail
+merge_rules:
+  fallback_reject_similarity_threshold_post_openalex_url_only_non_arxiv: 0.71
+  fallback_review_similarity_threshold_post_openalex_url_only_non_arxiv: 0.8

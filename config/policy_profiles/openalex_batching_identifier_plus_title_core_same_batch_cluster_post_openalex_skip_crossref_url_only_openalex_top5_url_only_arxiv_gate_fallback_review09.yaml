@@ -1,0 +1,21 @@
+profile_name: openalex_batching_identifier_plus_title_core_same_batch_cluster_post_openalex_skip_crossref_url_only_openalex_top5_url_only_arxiv_gate_fallback_review09
+summary: >
+  One-factor follow-up on the retained arXiv-gated residual profile: keep the
+  runtime/enrich behavior unchanged, but add a merge-level normalized-only
+  fallback review threshold at source-title similarity <= 0.90. This targets
+  the small non-arXiv url_canonical_only residual subgroup that failed both
+  OpenAlex and Crossref matching and mostly looks like source-title noise,
+  while leaving the high-confidence Crossref DOI rescue subgroup untouched.
+notes:
+  - Keep the retained arXiv-gated OpenAlex top5 activation unchanged
+  - Keep post-openalex crossref suppression/runtime ordering unchanged
+  - Change only normalized-only fallback handling for low-similarity residuals
+runtime_rules:
+  openalex_title_per_page_by_subreason:
+    url_canonical_only: 5
+  openalex_title_pick_best_accepted_subreasons:
+    - url_canonical_only
+  openalex_title_extra_result_require_arxiv_id_subreasons:
+    - url_canonical_only
+merge_rules:
+  fallback_review_similarity_threshold: 0.9

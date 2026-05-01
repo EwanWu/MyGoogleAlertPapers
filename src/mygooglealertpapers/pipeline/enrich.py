@@ -466,18 +466,37 @@ def _openalex_title_extra_result_require_arxiv_id_subreasons(settings: Settings)
     return set()
 
 
+def _openalex_title_extra_result_gate_status(
+    settings: Settings,
+    group: DispatchGroup,
+    title_lane_reason: str | None,
+    title_lane_subreason: str | None,
+) -> str | None:
+    if group.provider != 'openalex' or group.query_type != 'title':
+        return None
+    if title_lane_reason != TITLE_LANE_REASON_IDENTIFIER_GAP or not title_lane_subreason:
+        return None
+    restricted_subreasons = _openalex_title_extra_result_require_arxiv_id_subreasons(settings)
+    if title_lane_subreason not in restricted_subreasons:
+        return 'not_gated_subreason'
+    return 'eligible_with_arxiv_id' if group.representative.arxiv_id else 'blocked_missing_arxiv_id'
+
+
 def _openalex_title_extra_result_group_allowed(
     settings: Settings,
     group: DispatchGroup,
     title_lane_reason: str | None,
     title_lane_subreason: str | None,
 ) -> bool:
-    if title_lane_reason != TITLE_LANE_REASON_IDENTIFIER_GAP or not title_lane_subreason:
+    gate_status = _openalex_title_extra_result_gate_status(
+        settings,
+        group,
+        title_lane_reason,
+        title_lane_subreason,
+    )
+    if gate_status is None:
         return True
-    restricted_subreasons = _openalex_title_extra_result_require_arxiv_id_subreasons(settings)
-    if title_lane_subreason not in restricted_subreasons:
-        return True
-    return bool(group.representative.arxiv_id)
+    return gate_status != 'blocked_missing_arxiv_id'
 
 
 def _openalex_title_query_per_page(
@@ -617,12 +636,81 @@ def _record_experimental_post_openalex_non_suppression(
     _bump_nested_counter(dispatch_stats, 'post_openalex_unsuppressed_targeted_intent_counts_by_provider', group.provider, len(group.intents))
     _bump_nested_counter(dispatch_stats, 'post_openalex_unsuppressed_targeted_group_counts_by_reason', non_suppression_reason)
     _bump_nested_counter(dispatch_stats, 'post_openalex_unsuppressed_targeted_intent_counts_by_reason', non_suppression_reason, len(group.intents))
+    arxiv_bucket = 'with_arxiv_id' if group.representative.arxiv_id else 'without_arxiv_id'
+    _bump_nested_counter(dispatch_stats, 'post_openalex_unsuppressed_targeted_group_counts_by_arxiv_bucket', arxiv_bucket)
+    _bump_nested_counter(
+        dispatch_stats,
+        'post_openalex_unsuppressed_targeted_group_counts_by_reason_arxiv_bucket',
+        f'{non_suppression_reason}|{arxiv_bucket}',
+    )
     if title_lane_reason is not None:
         _bump_nested_counter(dispatch_stats, 'post_openalex_unsuppressed_targeted_group_counts_by_title_reason', title_lane_reason)
         _bump_nested_counter(dispatch_stats, 'post_openalex_unsuppressed_targeted_intent_counts_by_title_reason', title_lane_reason, len(group.intents))
     if title_lane_subreason is not None:
         _bump_nested_counter(dispatch_stats, 'post_openalex_unsuppressed_targeted_group_counts_by_title_subreason', title_lane_subreason)
         _bump_nested_counter(dispatch_stats, 'post_openalex_unsuppressed_targeted_intent_counts_by_title_subreason', title_lane_subreason, len(group.intents))
+        _bump_nested_counter(
+            dispatch_stats,
+            'post_openalex_unsuppressed_targeted_group_counts_by_reason_title_subreason',
+            f'{non_suppression_reason}|{title_lane_subreason}',
+        )
+
+
+def _record_openalex_title_extra_result_gate(
+    settings: Settings,
+    dispatch_stats: dict[str, object],
+    group: DispatchGroup,
+    title_lane_reason: str | None,
+    title_lane_subreason: str | None,
+    *,
+    effective_per_page: int,
+    effective_pick_best_accepted: bool,
+) -> None:
+    if group.provider != 'openalex' or group.query_type != 'title':
+        return
+    if title_lane_reason != TITLE_LANE_REASON_IDENTIFIER_GAP or not title_lane_subreason:
+        return
+    configured_per_page = _openalex_title_per_page_by_subreason(settings).get(title_lane_subreason, 1)
+    configured_pick_best = title_lane_subreason in _openalex_title_pick_best_accepted_subreasons(settings)
+    if configured_per_page <= 1 and not configured_pick_best:
+        return
+    gate_status = _openalex_title_extra_result_gate_status(
+        settings,
+        group,
+        title_lane_reason,
+        title_lane_subreason,
+    ) or 'not_gated_subreason'
+    dispatch_stats['openalex_title_extra_result_targeted_group_count'] = int(
+        dispatch_stats.get('openalex_title_extra_result_targeted_group_count', 0) or 0
+    ) + 1
+    dispatch_stats['openalex_title_extra_result_targeted_intent_count'] = int(
+        dispatch_stats.get('openalex_title_extra_result_targeted_intent_count', 0) or 0
+    ) + len(group.intents)
+    _bump_nested_counter(dispatch_stats, 'openalex_title_extra_result_targeted_group_counts_by_gate_status', gate_status)
+    _bump_nested_counter(
+        dispatch_stats,
+        'openalex_title_extra_result_targeted_intent_counts_by_gate_status',
+        gate_status,
+        len(group.intents),
+    )
+    _bump_nested_counter(
+        dispatch_stats,
+        'openalex_title_extra_result_targeted_group_counts_by_title_subreason',
+        title_lane_subreason,
+    )
+    _bump_nested_counter(
+        dispatch_stats,
+        'openalex_title_extra_result_targeted_group_counts_by_gate_status_title_subreason',
+        f'{gate_status}|{title_lane_subreason}',
+    )
+    if effective_per_page > 1 or effective_pick_best_accepted:
+        dispatch_stats['openalex_title_extra_result_effective_group_count'] = int(
+            dispatch_stats.get('openalex_title_extra_result_effective_group_count', 0) or 0
+        ) + 1
+    if gate_status == 'blocked_missing_arxiv_id':
+        dispatch_stats['openalex_title_extra_result_blocked_group_count'] = int(
+            dispatch_stats.get('openalex_title_extra_result_blocked_group_count', 0) or 0
+        ) + 1
 
 
 def _lane_budget_stop_reason(
@@ -1215,6 +1303,9 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
             'post_openalex_unsuppressed_targeted_intent_counts_by_provider': {},
             'post_openalex_unsuppressed_targeted_group_counts_by_reason': {},
             'post_openalex_unsuppressed_targeted_intent_counts_by_reason': {},
+            'post_openalex_unsuppressed_targeted_group_counts_by_arxiv_bucket': {},
+            'post_openalex_unsuppressed_targeted_group_counts_by_reason_arxiv_bucket': {},
+            'post_openalex_unsuppressed_targeted_group_counts_by_reason_title_subreason': {},
             'post_openalex_unsuppressed_targeted_group_counts_by_title_reason': {},
             'post_openalex_unsuppressed_targeted_intent_counts_by_title_reason': {},
             'post_openalex_unsuppressed_targeted_group_counts_by_title_subreason': {},
@@ -1226,6 +1317,15 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
             'experimental_post_openalex_skip_subreasons_by_provider': {provider: sorted(subreasons) for provider, subreasons in _experimental_post_openalex_skip_subreasons_by_provider(settings).items()} or None,
             'openalex_title_per_page_by_subreason': _openalex_title_per_page_by_subreason(settings) or None,
             'openalex_title_pick_best_accepted_subreasons': sorted(_openalex_title_pick_best_accepted_subreasons(settings)) or None,
+            'openalex_title_extra_result_require_arxiv_id_subreasons': sorted(_openalex_title_extra_result_require_arxiv_id_subreasons(settings)) or None,
+            'openalex_title_extra_result_targeted_group_count': 0,
+            'openalex_title_extra_result_targeted_intent_count': 0,
+            'openalex_title_extra_result_targeted_group_counts_by_gate_status': {},
+            'openalex_title_extra_result_targeted_intent_counts_by_gate_status': {},
+            'openalex_title_extra_result_targeted_group_counts_by_title_subreason': {},
+            'openalex_title_extra_result_targeted_group_counts_by_gate_status_title_subreason': {},
+            'openalex_title_extra_result_effective_group_count': 0,
+            'openalex_title_extra_result_blocked_group_count': 0,
             'lane_group_counts': lane_group_counts,
             'lane_intent_counts': lane_intent_counts,
             'lane_processed_intents': {lane: 0 for lane in lane_intent_counts},
@@ -1481,6 +1581,15 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
                 group,
                 title_lane_reason,
                 title_lane_subreason,
+            )
+            _record_openalex_title_extra_result_gate(
+                settings,
+                dispatch_stats,
+                group,
+                title_lane_reason,
+                title_lane_subreason,
+                effective_per_page=openalex_title_per_page,
+                effective_pick_best_accepted=openalex_pick_best_accepted,
             )
             query_variant = None
             if group.provider == 'openalex' and group.query_type == 'title' and (openalex_title_per_page > 1 or openalex_pick_best_accepted):

@@ -1,0 +1,19 @@
+profile_name: openalex_batching_identifier_plus_title_core_same_batch_cluster_post_openalex_skip_crossref_url_only_openalex_top5_url_only_arxiv_gate_targeted_nonarxiv_review08
+summary: >
+  Experimental subgroup-aware follow-up on the retained arXiv-gated residual
+  profile. Keep the runtime behavior unchanged, but during normalized-only
+  fallback route only the post-openalex residual `url_canonical_only`
+  non-arXiv subgroup to review when source-title similarity is <= 0.80.
+notes:
+  - Keep the retained arXiv-gated OpenAlex top5 activation unchanged
+  - Keep post-openalex crossref suppression/runtime ordering unchanged
+  - Restrict the new guardrail to non-arXiv post-openalex residual url-only fallback cases
+runtime_rules:
+  openalex_title_per_page_by_subreason:
+    url_canonical_only: 5
+  openalex_title_pick_best_accepted_subreasons:
+    - url_canonical_only
+  openalex_title_extra_result_require_arxiv_id_subreasons:
+    - url_canonical_only
+merge_rules:
+  fallback_review_similarity_threshold_post_openalex_url_only_non_arxiv: 0.8

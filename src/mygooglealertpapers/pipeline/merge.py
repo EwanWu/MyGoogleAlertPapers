@@ -13,6 +13,7 @@ from mygooglealertpapers.config import Settings
 from mygooglealertpapers.normalize.text import clean_abstract, clean_text, clean_title, clean_venue, comparison_text
 from mygooglealertpapers.cost.tracker import CostTracker
 from mygooglealertpapers.db.repository import Repository
+from mygooglealertpapers.pipeline.candidate_resolution import _candidate_exact_keys, cluster_candidates_within_batch
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +43,16 @@ STOPWORD_TOKENS = {'the', 'of', 'and', 'in', 'for', 'journal'}
 AUTHOR_FOOTNOTE_BLOB_RE = re.compile(r'\b(?:[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2}|[A-Z]{1,4}(?:\s+[A-Z][a-z]+){0,2})\s+\d+\b')
 AUTHOR_CREDENTIAL_RE = re.compile(r'\b(?:phd|msc|md|fmed\s*sci|mbbs|bsc|frcp|mph)\b', re.IGNORECASE)
 NON_ENGLISH_SCRIPT_RE = re.compile(r'[\u4e00-\u9fff\u3400-\u4dbf\u3040-\u30ff\uac00-\ud7af\u0400-\u04ff\u0600-\u06ff]')
+
+TITLE_LANE_REASON_NO_IDENTIFIER = 'no_identifier_available'
+TITLE_LANE_REASON_IDENTIFIER_GAP = 'identifier_present_but_not_sufficient_for_provider_path'
+TITLE_LANE_REASON_CLUSTER_LEADER = 'cluster_leader_path'
+TITLE_LANE_SUBREASON_PMID_ONLY = 'pmid_without_doi'
+TITLE_LANE_SUBREASON_PMCID_ONLY = 'pmcid_only'
+TITLE_LANE_SUBREASON_URL_ONLY = 'url_canonical_only'
+TITLE_LANE_SUBREASON_SCHOLAR_ONLY = 'scholar_cluster_only'
+TITLE_LANE_SUBREASON_ARXIV_ONLY = 'arxiv_only'
+TITLE_LANE_SUBREASON_MIXED_NON_DOI = 'mixed_non_doi_identifier'
 
 
 def _clean_text(value: str | None) -> str | None:
@@ -498,6 +509,100 @@ def _salvage_author_tail_pollution(
     }
 
 
+def _identifier_gap_subreason_for_exact_keys(exact_keys: dict[str, str]) -> str | None:
+    non_doi_keys = {key for key in exact_keys if key != 'doi'}
+    if not non_doi_keys:
+        return None
+    if len(non_doi_keys) > 1:
+        return TITLE_LANE_SUBREASON_MIXED_NON_DOI
+    only_key = next(iter(non_doi_keys))
+    if only_key == 'pmid':
+        return TITLE_LANE_SUBREASON_PMID_ONLY
+    if only_key == 'pmcid':
+        return TITLE_LANE_SUBREASON_PMCID_ONLY
+    if only_key == 'url_canonical':
+        return TITLE_LANE_SUBREASON_URL_ONLY
+    if only_key == 'scholar_cluster':
+        return TITLE_LANE_SUBREASON_SCHOLAR_ONLY
+    if only_key == 'arxiv':
+        return TITLE_LANE_SUBREASON_ARXIV_ONLY
+    return TITLE_LANE_SUBREASON_MIXED_NON_DOI
+
+
+def _latest_unmatched_source_row(
+    unmatched_rows: list[dict[str, object]],
+    *,
+    source_name: str,
+    query_type: str,
+) -> dict[str, object] | None:
+    for row in reversed(unmatched_rows):
+        if row.get('source_name') == source_name and row.get('query_type') == query_type:
+            return row
+    return None
+
+
+def _post_openalex_title_status_from_unmatched_rows(unmatched_rows: list[dict[str, object]]) -> str | None:
+    row = _latest_unmatched_source_row(unmatched_rows, source_name='openalex', query_type='title')
+    if row is None:
+        return None
+    if int(row.get('matched') or 0) != 1:
+        return 'openalex_title_unmatched'
+    if not row.get('doi'):
+        return 'openalex_title_match_without_doi'
+    return 'openalex_prior_doi_title_match'
+
+
+def _normalized_fallback_context(
+    *,
+    candidate_id: str,
+    normalized_row,
+    unmatched_rows: list[dict[str, object]],
+    leader_to_followers: dict[str, list[str]],
+    follower_to_leader: dict[str, str],
+) -> dict[str, object]:
+    exact_keys = _candidate_exact_keys(normalized_row) if normalized_row is not None else {}
+    is_cluster_leader = bool(leader_to_followers.get(candidate_id))
+    is_cluster_follower = candidate_id in follower_to_leader
+    if is_cluster_leader or is_cluster_follower:
+        title_lane_reason = TITLE_LANE_REASON_CLUSTER_LEADER
+        title_lane_subreason = None
+    elif exact_keys:
+        title_lane_reason = TITLE_LANE_REASON_IDENTIFIER_GAP
+        title_lane_subreason = _identifier_gap_subreason_for_exact_keys(exact_keys)
+    else:
+        title_lane_reason = TITLE_LANE_REASON_NO_IDENTIFIER
+        title_lane_subreason = None
+
+    arxiv_id = None
+    if normalized_row is not None and hasattr(normalized_row, 'keys') and 'arxiv_id_extracted' in normalized_row.keys():
+        arxiv_id = normalized_row['arxiv_id_extracted']
+    post_openalex_status = _post_openalex_title_status_from_unmatched_rows(unmatched_rows)
+    crossref_title_row = _latest_unmatched_source_row(unmatched_rows, source_name='crossref', query_type='title')
+
+    targeted_post_openalex_url_only_non_arxiv = bool(
+        title_lane_reason == TITLE_LANE_REASON_IDENTIFIER_GAP
+        and title_lane_subreason == TITLE_LANE_SUBREASON_URL_ONLY
+        and not arxiv_id
+        and post_openalex_status == 'openalex_title_unmatched'
+        and crossref_title_row is not None
+        and not is_cluster_leader
+        and not is_cluster_follower
+    )
+
+    return {
+        'candidate_id': candidate_id,
+        'exact_keys': exact_keys,
+        'title_lane_reason': title_lane_reason,
+        'title_lane_subreason': title_lane_subreason,
+        'post_openalex_status': post_openalex_status,
+        'is_cluster_leader': is_cluster_leader,
+        'is_cluster_follower': is_cluster_follower,
+        'has_crossref_title_attempt': crossref_title_row is not None,
+        'has_arxiv_id': bool(arxiv_id),
+        'targeted_post_openalex_url_only_non_arxiv': targeted_post_openalex_url_only_non_arxiv,
+    }
+
+
 def _normalized_fallback_guardrail(
     settings: Settings,
     *,
@@ -509,11 +614,20 @@ def _normalized_fallback_guardrail(
     norm_pmid: str | None,
     norm_pmcid: str | None,
     unmatched_rows: list[dict[str, object]],
+    fallback_context: dict[str, object] | None = None,
 ) -> dict[str, object]:
     has_identifier = bool(norm_doi or norm_pmid or norm_pmcid)
     max_title_similarity = _max_source_title_similarity(norm_title, unmatched_rows)
     review_similarity_threshold = settings.policy_profile.merge_value('fallback_review_similarity_threshold', None)
     sparse_similarity_threshold = settings.policy_profile.merge_value('fallback_review_sparse_metadata_similarity_threshold', None)
+    targeted_reject_similarity_threshold = settings.policy_profile.merge_value(
+        'fallback_reject_similarity_threshold_post_openalex_url_only_non_arxiv',
+        None,
+    )
+    targeted_review_similarity_threshold = settings.policy_profile.merge_value(
+        'fallback_review_similarity_threshold_post_openalex_url_only_non_arxiv',
+        None,
+    )
     reject_non_english_title = bool(settings.policy_profile.merge_value('fallback_reject_non_english_title', False))
     reject_author_blob = bool(settings.policy_profile.merge_value('fallback_reject_author_blob', False))
     reject_author_blob_identifier_aware = bool(settings.policy_profile.merge_value('fallback_reject_author_blob_identifier_aware', False))
@@ -547,6 +661,22 @@ def _normalized_fallback_guardrail(
         else:
             decision = 'review'
             reasons.append('title_has_author_tail_pollution')
+    elif (
+        targeted_reject_similarity_threshold is not None
+        and not has_identifier
+        and bool((fallback_context or {}).get('targeted_post_openalex_url_only_non_arxiv'))
+        and max_title_similarity <= float(targeted_reject_similarity_threshold)
+    ):
+        decision = 'reject'
+        reasons.append('targeted_post_openalex_url_only_non_arxiv_very_low_source_title_similarity')
+    elif (
+        targeted_review_similarity_threshold is not None
+        and not has_identifier
+        and bool((fallback_context or {}).get('targeted_post_openalex_url_only_non_arxiv'))
+        and max_title_similarity <= float(targeted_review_similarity_threshold)
+    ):
+        decision = 'review'
+        reasons.append('targeted_post_openalex_url_only_non_arxiv_low_source_title_similarity')
     elif review_similarity_threshold is not None and not has_identifier and max_title_similarity <= float(review_similarity_threshold):
         decision = 'review'
         reasons.append('low_source_title_similarity')
@@ -568,6 +698,8 @@ def _normalized_fallback_guardrail(
         'max_source_title_similarity': round(max_title_similarity, 3),
         'review_similarity_threshold': review_similarity_threshold,
         'sparse_similarity_threshold': sparse_similarity_threshold,
+        'targeted_reject_similarity_threshold': targeted_reject_similarity_threshold,
+        'targeted_review_similarity_threshold': targeted_review_similarity_threshold,
         'reject_non_english_title': reject_non_english_title,
         'unmatched_source_count': len(unmatched_rows),
         'has_authors': has_authors,
@@ -575,6 +707,7 @@ def _normalized_fallback_guardrail(
         'has_year': has_year,
         'normalized_title_override': author_pollution_salvage.get('cleaned_title') if author_pollution_salvage else None,
         'author_pollution_salvage': author_pollution_salvage,
+        'fallback_context': fallback_context or {},
     }
 
 
@@ -613,6 +746,18 @@ def build_merged_metadata(settings: Settings, *, limit: int) -> None:
     started_at = time.perf_counter()
     with repo.connect() as conn:
         repo.start_batch_run(conn, run_id=run_id, stage='merge_metadata', requested_limit=limit, notes=None)
+        normalized_rows = conn.execute(
+            '''
+            SELECT candidate_id, norm_title, doi_extracted, pmid_extracted, pmcid_extracted,
+                   arxiv_id_extracted, url_canonical, scholar_cluster_hint
+            FROM paper_candidate_normalized
+            ORDER BY id ASC
+            '''
+        ).fetchall()
+        normalized_row_by_candidate = {row[0]: row for row in normalized_rows}
+        cluster_summary = cluster_candidates_within_batch(settings, repo, conn, normalized_rows)
+        leader_to_followers = dict(cluster_summary.get('leader_to_followers') or {})
+        follower_to_leader = dict(cluster_summary.get('follower_to_leader') or {})
         rows = conn.execute(
             """
             SELECT pcn.candidate_id
@@ -683,6 +828,13 @@ def build_merged_metadata(settings: Settings, *, limit: int) -> None:
                         (candidate_id,),
                     ).fetchall()
                 ]
+                fallback_context = _normalized_fallback_context(
+                    candidate_id=candidate_id,
+                    normalized_row=normalized_row_by_candidate.get(candidate_id),
+                    unmatched_rows=unmatched_source_rows,
+                    leader_to_followers=leader_to_followers,
+                    follower_to_leader=follower_to_leader,
+                )
                 fallback_guardrail = _normalized_fallback_guardrail(
                     settings,
                     norm_title=norm_title,
@@ -693,6 +845,7 @@ def build_merged_metadata(settings: Settings, *, limit: int) -> None:
                     norm_pmid=norm_pmid,
                     norm_pmcid=norm_pmcid,
                     unmatched_rows=unmatched_source_rows,
+                    fallback_context=fallback_context,
                 )
                 if fallback_guardrail['decision'] == 'reject':
                     tracker.record_stage_cost(

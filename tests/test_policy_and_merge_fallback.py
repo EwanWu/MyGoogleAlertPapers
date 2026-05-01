@@ -7,12 +7,19 @@ from mygooglealertpapers.pipeline.merge import build_merged_metadata
 from mygooglealertpapers.pipeline.dedup import deduplicate_candidates
 
 
-def _make_settings(db_path: Path, *, provider_rules: dict[str, dict[str, object]] | None = None, merge_rules: dict[str, object] | None = None) -> Settings:
+def _make_settings(
+    db_path: Path,
+    *,
+    provider_rules: dict[str, dict[str, object]] | None = None,
+    merge_rules: dict[str, object] | None = None,
+    runtime_rules: dict[str, object] | None = None,
+) -> Settings:
     profile = PolicyProfile(
         name='test_profile',
         path=None,
         provider_rules=provider_rules or {},
         merge_rules=merge_rules or {},
+        runtime_rules=runtime_rules or {},
         replay_defaults={},
         raw={},
     )
@@ -511,4 +518,282 @@ def test_merge_salvages_author_tail_pollution_when_cleaned_title_matches_source(
         assert row[0] == cleaned_title
         assert 'title_author_tail_pollution_salvaged' in row[1]
         review_count = conn.execute("SELECT COUNT(*) FROM merge_review_queue WHERE candidate_id = ?", ('cand_author_salvage',)).fetchone()[0]
+        assert review_count == 0
+
+
+def test_merge_rejects_targeted_post_openalex_url_only_non_arxiv_very_low_similarity(tmp_path: Path):
+    db_path = tmp_path / 'mgap.db'
+    create_schema_at_default_path(db_path)
+    settings = _make_settings(
+        db_path,
+        merge_rules={
+            'normalized_only_fallback': True,
+            'fallback_reject_similarity_threshold_post_openalex_url_only_non_arxiv': 0.8,
+        },
+    )
+
+    import sqlite3
+
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO paper_candidate_normalized (
+                candidate_id, norm_title, norm_title_key, norm_authors_json,
+                first_author_family, year_guess, venue_guess, doi_extracted,
+                pmid_extracted, pmcid_extracted, arxiv_id_extracted,
+                url_canonical, scholar_cluster_hint
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                'cand_targeted_reject',
+                'Measuring blood flow and pulsatility with MRI: optimisation, validation and application in cerebral small vessel',
+                'measuring blood flow and pulsatility',
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                'https://example.org/paper/targeted-reject',
+                None,
+            ),
+        )
+        conn.executemany(
+            """
+            INSERT INTO source_record (
+                candidate_id, source_name, query_type, query_string, matched, title, doi
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                ('cand_targeted_reject', 'openalex', 'title', 'measuring blood flow', 0, None, None),
+                ('cand_targeted_reject', 'crossref', 'title', 'measuring blood flow', 0, 'A Review of Indocyanine Green Fluorescent Imaging in Surgery', '10.1155/2012/940585'),
+            ],
+        )
+        conn.commit()
+
+    build_merged_metadata(settings, limit=10)
+
+    with sqlite3.connect(db_path) as conn:
+        proposal_count = conn.execute("SELECT COUNT(*) FROM merged_metadata_proposal WHERE candidate_id = ?", ('cand_targeted_reject',)).fetchone()[0]
+        assert proposal_count == 0
+        review_count = conn.execute("SELECT COUNT(*) FROM merge_review_queue WHERE candidate_id = ?", ('cand_targeted_reject',)).fetchone()[0]
+        assert review_count == 0
+
+
+def test_merge_routes_targeted_post_openalex_url_only_non_arxiv_fallback_to_review(tmp_path: Path):
+    db_path = tmp_path / 'mgap.db'
+    create_schema_at_default_path(db_path)
+    settings = _make_settings(
+        db_path,
+        merge_rules={
+            'normalized_only_fallback': True,
+            'fallback_review_similarity_threshold_post_openalex_url_only_non_arxiv': 0.8,
+        },
+    )
+
+    import sqlite3
+
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO paper_candidate_normalized (
+                candidate_id, norm_title, norm_title_key, norm_authors_json,
+                first_author_family, year_guess, venue_guess, doi_extracted,
+                pmid_extracted, pmcid_extracted, arxiv_id_extracted,
+                url_canonical, scholar_cluster_hint
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                'cand_targeted_review',
+                'Measuring blood flow and pulsatility with MRI: optimisation, validation and application in cerebral small vessel',
+                'measuring blood flow and pulsatility',
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                'https://example.org/paper/targeted-review',
+                None,
+            ),
+        )
+        conn.executemany(
+            """
+            INSERT INTO source_record (
+                candidate_id, source_name, query_type, query_string, matched, title, doi
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                ('cand_targeted_review', 'openalex', 'title', 'measuring blood flow', 0, None, None),
+                ('cand_targeted_review', 'crossref', 'title', 'measuring blood flow', 0, 'A Review of Indocyanine Green Fluorescent Imaging in Surgery', '10.1155/2012/940585'),
+            ],
+        )
+        conn.commit()
+
+    build_merged_metadata(settings, limit=10)
+    deduplicate_candidates(settings, limit=10)
+
+    with sqlite3.connect(db_path) as conn:
+        payload = conn.execute(
+            "SELECT conflict_flags_json FROM merged_metadata_proposal WHERE candidate_id = ?",
+            ('cand_targeted_review',),
+        ).fetchone()[0]
+        assert 'targeted_post_openalex_url_only_non_arxiv_low_source_title_similarity' in payload
+        review_count = conn.execute("SELECT COUNT(*) FROM merge_review_queue WHERE candidate_id = ?", ('cand_targeted_review',)).fetchone()[0]
+        assert review_count == 1
+
+
+def test_merge_does_not_route_targeted_rule_for_arxiv_native_candidate(tmp_path: Path):
+    db_path = tmp_path / 'mgap.db'
+    create_schema_at_default_path(db_path)
+    settings = _make_settings(
+        db_path,
+        merge_rules={
+            'normalized_only_fallback': True,
+            'fallback_review_similarity_threshold_post_openalex_url_only_non_arxiv': 0.8,
+        },
+    )
+
+    import sqlite3
+
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO paper_candidate_normalized (
+                candidate_id, norm_title, norm_title_key, norm_authors_json,
+                first_author_family, year_guess, venue_guess, doi_extracted,
+                pmid_extracted, pmcid_extracted, arxiv_id_extracted,
+                url_canonical, scholar_cluster_hint
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                'cand_arxiv_native',
+                'DINOv3 with Test-Time Calibration for Automated Carotid Intima-Media Thickness Measurement on CUBS v1',
+                'dinov3 carotid thickness',
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                '2603.13382',
+                'https://arxiv.org/pdf/2603.13382',
+                None,
+            ),
+        )
+        conn.executemany(
+            """
+            INSERT INTO source_record (
+                candidate_id, source_name, query_type, query_string, matched, title, doi
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                ('cand_arxiv_native', 'openalex', 'title', 'dinov3 carotid thickness', 0, None, None),
+                ('cand_arxiv_native', 'crossref', 'title', 'dinov3 carotid thickness', 0, 'Automated Measurement of Carotid Artery Intima-Media Thickness', '10.1007/978-1-84882-688-5_11'),
+            ],
+        )
+        conn.commit()
+
+    build_merged_metadata(settings, limit=10)
+    deduplicate_candidates(settings, limit=10)
+
+    with sqlite3.connect(db_path) as conn:
+        payload = conn.execute(
+            "SELECT conflict_flags_json FROM merged_metadata_proposal WHERE candidate_id = ?",
+            ('cand_arxiv_native',),
+        ).fetchone()[0]
+        assert 'targeted_post_openalex_url_only_non_arxiv_low_source_title_similarity' not in payload
+        review_count = conn.execute("SELECT COUNT(*) FROM merge_review_queue WHERE candidate_id = ?", ('cand_arxiv_native',)).fetchone()[0]
+        assert review_count == 0
+
+
+def test_merge_does_not_route_targeted_rule_for_clustered_url_only_leader(tmp_path: Path):
+    db_path = tmp_path / 'mgap.db'
+    create_schema_at_default_path(db_path)
+    settings = _make_settings(
+        db_path,
+        merge_rules={
+            'normalized_only_fallback': True,
+            'fallback_review_similarity_threshold_post_openalex_url_only_non_arxiv': 0.8,
+        },
+        runtime_rules={
+            'same_batch_clustering_enabled': True,
+        },
+    )
+
+    import sqlite3
+
+    with sqlite3.connect(db_path) as conn:
+        conn.executemany(
+            """
+            INSERT INTO paper_candidate_normalized (
+                candidate_id, norm_title, norm_title_key, norm_authors_json,
+                first_author_family, year_guess, venue_guess, doi_extracted,
+                pmid_extracted, pmcid_extracted, arxiv_id_extracted,
+                url_canonical, scholar_cluster_hint
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    'cand_cluster_leader',
+                    'Long-Term Outcomes of Left Bundle-Branch Pacing vs Biventricular Pacing in Heart Failure: The HeartSync-LBBP Randomized Clinical Trial',
+                    'heartsync lbbp randomized clinical trial',
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    'https://jamanetwork.com/journals/jamacardiology/fullarticle/2845803',
+                    None,
+                ),
+                (
+                    'cand_cluster_follower',
+                    'Long-term outcomes of left bundle-branch pacing vs biventricular pacing in heart failure: the HeartSync-LBBP randomized clinical trial',
+                    'heartsync lbbp randomized clinical trial follower',
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    'https://jamanetwork.com/journals/jamacardiology/fullarticle/2845803',
+                    None,
+                ),
+            ],
+        )
+        conn.executemany(
+            """
+            INSERT INTO source_record (
+                candidate_id, source_name, query_type, query_string, matched, title, doi
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                ('cand_cluster_leader', 'openalex', 'title', 'heartsync lbbp', 0, None, None),
+                ('cand_cluster_leader', 'crossref', 'title', 'heartsync lbbp', 0, 'Long-Term Outcomes of Left Bundle-Branch Pacing vs Biventricular Pacing in Heart Failure', '10.1001/jamacardio.2026.0083'),
+                ('cand_cluster_follower', 'openalex', 'title', 'heartsync lbbp', 0, None, None),
+                ('cand_cluster_follower', 'crossref', 'title', 'heartsync lbbp', 0, 'Long-Term Outcomes of Left Bundle-Branch Pacing vs Biventricular Pacing in Heart Failure', '10.1001/jamacardio.2026.0083'),
+            ],
+        )
+        conn.commit()
+
+    build_merged_metadata(settings, limit=10)
+    deduplicate_candidates(settings, limit=10)
+
+    with sqlite3.connect(db_path) as conn:
+        leader_payload = conn.execute(
+            "SELECT conflict_flags_json FROM merged_metadata_proposal WHERE candidate_id = ?",
+            ('cand_cluster_leader',),
+        ).fetchone()[0]
+        assert 'targeted_post_openalex_url_only_non_arxiv_low_source_title_similarity' not in leader_payload
+        review_count = conn.execute("SELECT COUNT(*) FROM merge_review_queue WHERE candidate_id = ?", ('cand_cluster_leader',)).fetchone()[0]
         assert review_count == 0
