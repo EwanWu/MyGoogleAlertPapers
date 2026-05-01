@@ -1,4 +1,4 @@
-# Project phase map and current status (updated 2026-04-29, same-batch clustering follow-up)
+# Project phase map and current status (updated 2026-05-01, Phase 2B narrow arXiv-gated promotion follow-up)
 
 ## Purpose
 
@@ -14,7 +14,7 @@ Read this first if you need the shortest path to:
 
 The project is now in:
 
-> **default-flow operational hardening / request-scheduling optimization promotion with exact library-first prelink now active**
+> **default-flow operational hardening with exact library-first prelink + same-batch clustering active, Phase 2A crossref title suppression promoted, broad Phase 2B top5 rejected, and a narrow Phase 2B arXiv-gated residual top5 exception promoted as the next retained patch**
 
 The pipeline is no longer mainly exploring strategy space. The current work is about locking one coherent default path, hardening the operator/runtime boundary around it, and only promoting narrow request-efficiency optimizations after deterministic replay evidence. As of 2026-04-29, this now includes an active exact library-first prelink layer above provider dispatch rather than treating duplicate-query elimination as a future-only idea.
 
@@ -33,10 +33,14 @@ Operationally:
 
 Runtime defaults now additionally assume:
 - exact library-first prelink before provider fanout
+- exact same-batch clustering before residual title work
 - safe dispatch dedup
 - context-aware enrichment cache keys
 - OpenAlex DOI batching
 - title payload reuse enabled by default for `crossref` / `openalex` / `semanticscholar`
+- post-openalex conditional suppression for `crossref:url_canonical_only`
+- broad `top1 -> top5 + best-accepted` remains rejected as a default residual upgrade
+- narrow `url_canonical_only + arxiv_id_extracted -> top5 + best-accepted` is now the retained Phase 2B promotion result, but should be read as promotion-approved logic rather than already-flipped builtin default unless a later runtime-default change explicitly says so
 
 ## Recent hardening phase now absorbed into the mainline view
 
@@ -93,6 +97,11 @@ The current runtime-default additions are justified by a smaller but decision-gr
 - `docs/validation/day5-identifier-plus-title-core-live150-20260429.md`
 - `docs/17-phase1-library-prelink-implementation-and-ablation-2026-04-29.md`
 - `docs/validation/day6-same-batch-cluster-ablation-150-20260429.md`
+- `docs/18-next-phase-runtime-hardening-plan-2026-04-29.md`
+- `docs/19-phase2A-post-openalex-conditional-suppression-promotion-memo-2026-04-30.md`
+- `docs/22-phase2B-final-promotion-gate-large-scale-decision-memo-2026-05-01.md`
+- `docs/23-phase2B-narrow-activation-arxiv-gate-decision-memo-2026-05-01.md`
+- `docs/24-phase2B-narrow-activation-arxiv-gate-promotion-memo-2026-05-01.md`
 
 What these established:
 - Day 2 operator-boundary hardening is in place and regression-tested
@@ -104,6 +113,8 @@ What these established:
 - exact duplicate-query elimination has now crossed from blueprint to implementation for Phase 1: the runtime performs exact library-first prelink before provider dispatch, and live control/treatment evidence shows the operator-visible cost delta is large enough to justify making this the fixed next-stage workstream
 - the next layer is now also validated and promoted: exact same-batch candidate clustering on top of prelink reduced dispatch groups `264 -> 216`, dispatch requests `226 -> 178`, and total batch wall time `586361 -> 447053 ms` on the day6 synthetic duplicate stress slice without adding review burden
 - this promotion is no longer only documentary: the builtin runtime default and the baseline helper default should now both bind to the same-batch-cluster-enabled synchronous profile rather than the earlier pre-clustering `identifier_plus_title_core` default
+- the current Phase 2A strict-rule result is now also decision-grade and has now been bound into the promoted runtime default: blanket `crossref:url_canonical_only` skipping was rejected for semantic regression, while the narrower post-openalex conditional suppression rule passed both fixed-slice and fresh-like semantic gates and is now the retained narrow runtime hardening rule for that subgroup
+- Phase 2B has now also closed the next residual question: broad `top1 -> top5 + best-accepted` failed the large-scale efficiency gate on 956 candidates, but retrospective exact subgroup validation showed that all 4 observed final-confidence gains were concentrated in a 26-candidate arXiv-native residual subgroup, so the retained Phase 2B result is a narrow promoted exception rather than a broad default flip
 
 ## Active document set to read now
 
@@ -120,18 +131,25 @@ What these established:
 11. `docs/validation/trackB-unpaywall-decision-memo-20260422.md`
 12. `docs/validation/mainline-summary-20260422_mainline.md`
 13. `docs/17-phase1-library-prelink-implementation-and-ablation-2026-04-29.md`
+14. `docs/18-next-phase-runtime-hardening-plan-2026-04-29.md`
+15. `docs/19-phase2A-post-openalex-conditional-suppression-promotion-memo-2026-04-30.md`
+16. `docs/22-phase2B-final-promotion-gate-large-scale-decision-memo-2026-05-01.md`
+17. `docs/23-phase2B-narrow-activation-arxiv-gate-decision-memo-2026-05-01.md`
+18. `docs/24-phase2B-narrow-activation-arxiv-gate-promotion-memo-2026-05-01.md`
 
 ## What is still open
 
-The main unresolved problem is no longer whether staged live lanes are viable, nor whether exact library-first prelink is worth implementing, nor whether exact same-batch clustering can matter in practice. All three are now established and have now been promoted into the default runtime layer. The current unresolved problem is **how to combine exact prelink, same-batch clustering, and lane-level runtime control so the promoted `identifier_fastpath + title_core` default stays fast under wider live bursts, mainly by shrinking residual `crossref` title-lane cost**.
+The main unresolved problem is no longer whether staged live lanes are viable, nor whether exact library-first prelink is worth implementing, nor whether exact same-batch clustering can matter in practice. All three are now established and have now been promoted into the default runtime layer. The current unresolved problem is now narrower still: **after rejecting broad residual `top5` promotion and retaining only the arXiv-gated exception, how to continue improving the remaining non-arXiv `url_canonical_only` residual path without reintroducing broad top5 cost**.
 
-The next useful validation is:
+The next useful validation / rollout step is:
 - preserve the current promoted mainline/runtime defaults
-- keep exact `library_prelink` enabled as the new first-layer short-circuit
-- use `identifier_fastpath + title_core` as the recommended synchronous live default profile for unresolved candidates
+- keep exact `library_prelink` enabled as the first-layer short-circuit
+- keep exact same-batch clustering enabled as the second-layer short-circuit
+- use `identifier_fastpath + title_core` as the synchronous live default base
+- keep the validated post-openalex conditional suppression rule for `crossref:url_canonical_only`
+- retain the promoted Phase 2B arXiv-gated `top5 + best-accepted` exception as the only approved residual top5 expansion
 - keep `biomedical_fallback` and `slow_fallback` outside the synchronous default path until separately budgeted
-- implement same-batch candidate clustering as the next duplicate-suppression layer after exact prelink
-- continue tuning `title_core` budget shape and residual `crossref` title cost while keeping judgment on fixed-seed replay
+- continue tuning the remaining residual non-arXiv title cost only through the same replay-gated process
 
 ## Immediate next-step direction
 
@@ -142,10 +160,11 @@ Recommended order:
 2. keep exact same-batch candidate clustering as the second short-circuit layer
 3. keep `identifier_fastpath` as the guaranteed live base lane for unresolved candidates
 4. keep the same-batch-cluster-enabled `identifier_fastpath + title_core` profile as the promoted synchronous default profile
-5. optimize the residual `title_core` lane, with special focus on `crossref` title cost
-6. tune explicit lane budgets / stop conditions as degraded-safe modes before attempting provider concurrency
-7. keep every new scheduling optimization behind fixed-seed replay and, when needed, recorded-payload replay
-8. avoid changing match standards unless a new correctness problem appears
+5. promote the validated post-openalex conditional suppression rule for `crossref:url_canonical_only`
+6. then continue optimizing the residual `title_core` lane, with special focus on the still-unsuppressed `crossref` title cost
+7. tune explicit lane budgets / stop conditions as degraded-safe modes before attempting provider concurrency
+8. keep every new scheduling optimization behind fixed-seed replay and, when needed, recorded-payload replay
+9. avoid changing match standards unless a new correctness problem appears
 
 ## What should not be reopened casually
 

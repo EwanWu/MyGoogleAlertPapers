@@ -1,0 +1,18 @@
+profile_name: openalex_batching_identifier_plus_title_core_same_batch_cluster_post_openalex_skip_crossref_url_only_openalex_top5_url_only_arxiv_gate
+summary: >
+  Narrow activation follow-up: keep the residual url_canonical_only OpenAlex
+  top5 + best-accepted package, but only activate it when the candidate also
+  carries an extracted arXiv identifier. This targets the preprint-native
+  subgroup that showed the only observed final-confidence gains in the larger
+  promotion-gate matrix.
+notes:
+  - Keep the promoted post-openalex crossref suppression runtime unchanged
+  - Keep top1 as the default residual path for non-arXiv url_canonical_only cases
+  - Only expand OpenAlex title retrieval when arxiv_id_extracted is present
+runtime_rules:
+  openalex_title_per_page_by_subreason:
+    url_canonical_only: 5
+  openalex_title_pick_best_accepted_subreasons:
+    - url_canonical_only
+  openalex_title_extra_result_require_arxiv_id_subreasons:
+    - url_canonical_only

@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-DEFAULT_POLICY_PROFILE = 'config/policy_profiles/openalex_batching_identifier_plus_title_core_same_batch_cluster.yaml'
+DEFAULT_POLICY_PROFILE = 'config/policy_profiles/openalex_batching_identifier_plus_title_core_same_batch_cluster_post_openalex_skip_crossref_url_only.yaml'
 DEFAULT_STAGES = ('enrich', 'merge', 'dedup')
 
 

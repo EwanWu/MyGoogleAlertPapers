@@ -1,0 +1,53 @@
+profile_name: openalex_batching_identifier_plus_title_core_same_batch_cluster_post_openalex_skip_crossref_url_only
+summary: >
+  Narrow experimental profile: preserve the promoted same-batch-cluster default,
+  but for residual url_canonical_only title-lane cases, let openalex run first
+  and suppress crossref only after a DOI-bearing openalex title recovery.
+notes:
+  - One-factor follow-up ablation after rejecting blanket skip of crossref url_canonical_only
+  - Keep library prelink, same-batch clustering, and current identifier/title lane shape
+  - Do not pre-skip crossref; suppress it only after DOI-bearing openalex title recovery
+provider_rules:
+  crossref:
+    enabled: true
+    title_payload_reuse_enabled: true
+  openalex:
+    enabled: true
+    doi_batch_enabled: true
+    title_payload_reuse_enabled: true
+  semanticscholar:
+    enabled: true
+    title_payload_reuse_enabled: true
+  pubmed:
+    enabled: true
+    fallback_only_for_core_fields: true
+  europepmc:
+    enabled: true
+    trigger_mode: narrowed_biomedical_fallback
+  arxiv:
+    enabled: true
+    trigger_mode: arxiv_native_only
+merge_rules:
+  pubmed_title_doi_suppression: true
+  normalized_only_fallback: true
+  fallback_reject_author_blob_identifier_aware: true
+runtime_rules:
+  lane_order:
+    - identifier_fastpath
+    - title_core
+    - biomedical_fallback
+    - slow_fallback
+  enabled_lanes:
+    - identifier_fastpath
+    - title_core
+  library_prelink_enabled: true
+  same_batch_clustering_enabled: true
+  title_lane_post_openalex_skip_subreasons_by_provider:
+    crossref:
+      - url_canonical_only
+replay_defaults:
+  stages:
+    - normalize
+    - enrich
+    - merge
+    - dedup

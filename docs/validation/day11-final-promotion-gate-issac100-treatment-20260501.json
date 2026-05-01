@@ -1,0 +1,337 @@
+{
+  "status": "ok",
+  "failed_stage": null,
+  "error_message": null,
+  "source_db": "/home/ewan/NewCareer/Openclaw/proj/MyGoogleAlertPapers/data/mgap_issac_100.db",
+  "output_db": "/home/ewan/NewCareer/Openclaw/proj/MyGoogleAlertPapers/data/benchmark/day11_final_promotion_gate_issac100_treatment_20260501.db",
+  "policy_profile": "/home/ewan/NewCareer/Openclaw/proj/MyGoogleAlertPapers/config/policy_profiles/openalex_batching_identifier_plus_title_core_same_batch_cluster_post_openalex_skip_crossref_url_only_openalex_top5_url_only.yaml",
+  "policy_profile_name": "openalex_batching_identifier_plus_title_core_same_batch_cluster_post_openalex_skip_crossref_url_only_openalex_top5_url_only",
+  "http_fixture_record": null,
+  "http_fixture_replay": null,
+  "stages": [
+    "enrich",
+    "merge",
+    "dedup"
+  ],
+  "source_candidate_count": 244,
+  "replay_candidate_count": 244,
+  "normalized_candidate_count": 244,
+  "dirty_doi_source_count": 7,
+  "dirty_doi_output_count": 7,
+  "dirty_doi_repaired_count": 0,
+  "provider_intent_count": 421,
+  "source_record_count": 421,
+  "matched_source_record_count": 342,
+  "merged_metadata_proposal_count": 243,
+  "normalized_only_fallback_proposal_count": 28,
+  "canonical_paper_count": 213,
+  "merge_review_queue_count": 3,
+  "cost_event_count": 908,
+  "batch_run_count": 3,
+  "severe_doi_conflict_count": 3,
+  "total_batch_duration_ms": 504960,
+  "total_provider_latency_ms": 498095,
+  "provider_summary": [
+    {
+      "provider": "arxiv",
+      "events": 3,
+      "total_latency_ms": 3501,
+      "estimated_cost_usd": 0.0
+    },
+    {
+      "provider": "crossref",
+      "events": 162,
+      "total_latency_ms": 210265,
+      "estimated_cost_usd": 0.0
+    },
+    {
+      "provider": "europepmc",
+      "events": 6,
+      "total_latency_ms": 9956,
+      "estimated_cost_usd": 0.0
+    },
+    {
+      "provider": "none",
+      "events": 487,
+      "total_latency_ms": 0,
+      "estimated_cost_usd": 0.0
+    },
+    {
+      "provider": "openalex",
+      "events": 244,
+      "total_latency_ms": 267182,
+      "estimated_cost_usd": 0.0
+    },
+    {
+      "provider": "pubmed",
+      "events": 6,
+      "total_latency_ms": 7191,
+      "estimated_cost_usd": 0.0
+    }
+  ],
+  "enrich_dispatch_summary": {
+    "candidate_count": 244,
+    "unresolved_candidate_count": 244,
+    "library_prelink_enabled": true,
+    "library_prelinked_candidate_count": 0,
+    "library_prelink_rule_counts": {},
+    "same_batch_clustering_enabled": true,
+    "same_batch_cluster_group_count": 23,
+    "same_batch_clustered_candidate_count": 27,
+    "same_batch_cluster_rule_counts": {
+      "doi_exact_cluster": 17,
+      "pmcid_exact_cluster": 2,
+      "url_canonical_exact_cluster": 8
+    },
+    "same_batch_cluster_naive_group_count": 445,
+    "same_batch_cluster_effective_group_count": 445,
+    "same_batch_cluster_group_savings_estimate": 0,
+    "planned_provider_intents": 941,
+    "prelink_skipped_provider_intents": 0,
+    "unresolved_provider_intents": 941,
+    "pre_experimental_runnable_provider_intents": 941,
+    "experimental_skipped_provider_intents": 438,
+    "runnable_provider_intents": 503,
+    "pre_experimental_dispatch_group_count": 445,
+    "experimental_skipped_group_count": 0,
+    "experimental_skipped_intent_count": 0,
+    "experimental_skipped_group_counts_by_provider": {},
+    "experimental_skipped_intent_counts_by_provider": {},
+    "experimental_skipped_group_counts_by_reason": {},
+    "experimental_skipped_intent_counts_by_reason": {},
+    "experimental_skipped_group_counts_by_title_reason": {},
+    "experimental_skipped_intent_counts_by_title_reason": {},
+    "experimental_skipped_group_counts_by_title_subreason": {},
+    "experimental_skipped_intent_counts_by_title_subreason": {},
+    "post_openalex_suppressed_group_count": 82,
+    "post_openalex_suppressed_intent_count": 82,
+    "post_openalex_suppressed_group_counts_by_provider": {
+      "crossref": 82
+    },
+    "post_openalex_suppressed_intent_counts_by_provider": {
+      "crossref": 82
+    },
+    "post_openalex_suppressed_group_counts_by_reason": {
+      "post_openalex_skip:crossref:url_canonical_only": 82
+    },
+    "post_openalex_suppressed_intent_counts_by_reason": {
+      "post_openalex_skip:crossref:url_canonical_only": 82
+    },
+    "post_openalex_suppressed_group_counts_by_title_reason": {
+      "identifier_present_but_not_sufficient_for_provider_path": 82
+    },
+    "post_openalex_suppressed_intent_counts_by_title_reason": {
+      "identifier_present_but_not_sufficient_for_provider_path": 82
+    },
+    "post_openalex_suppressed_group_counts_by_title_subreason": {
+      "url_canonical_only": 82
+    },
+    "post_openalex_suppressed_intent_counts_by_title_subreason": {
+      "url_canonical_only": 82
+    },
+    "post_openalex_unsuppressed_targeted_group_count": 25,
+    "post_openalex_unsuppressed_targeted_intent_count": 26,
+    "post_openalex_unsuppressed_targeted_group_counts_by_provider": {
+      "crossref": 25
+    },
+    "post_openalex_unsuppressed_targeted_intent_counts_by_provider": {
+      "crossref": 26
+    },
+    "post_openalex_unsuppressed_targeted_group_counts_by_reason": {
+      "openalex_title_unmatched": 25
+    },
+    "post_openalex_unsuppressed_targeted_intent_counts_by_reason": {
+      "openalex_title_unmatched": 26
+    },
+    "post_openalex_unsuppressed_targeted_group_counts_by_title_reason": {
+      "identifier_present_but_not_sufficient_for_provider_path": 25
+    },
+    "post_openalex_unsuppressed_targeted_intent_counts_by_title_reason": {
+      "identifier_present_but_not_sufficient_for_provider_path": 26
+    },
+    "post_openalex_unsuppressed_targeted_group_counts_by_title_subreason": {
+      "url_canonical_only": 25
+    },
+    "post_openalex_unsuppressed_targeted_intent_counts_by_title_subreason": {
+      "url_canonical_only": 26
+    },
+    "dispatch_group_count": 445,
+    "lane_order": [
+      "identifier_fastpath",
+      "title_core",
+      "biomedical_fallback",
+      "slow_fallback"
+    ],
+    "enabled_lanes": [
+      "identifier_fastpath",
+      "title_core"
+    ],
+    "experimental_title_skip_subreasons_by_provider": null,
+    "experimental_post_openalex_skip_subreasons_by_provider": {
+      "crossref": [
+        "url_canonical_only"
+      ]
+    },
+    "openalex_title_per_page_by_subreason": {
+      "url_canonical_only": 5
+    },
+    "openalex_title_pick_best_accepted_subreasons": [
+      "url_canonical_only"
+    ],
+    "lane_group_counts": {
+      "identifier_fastpath": 189,
+      "title_core": 256
+    },
+    "lane_intent_counts": {
+      "identifier_fastpath": 223,
+      "title_core": 280
+    },
+    "lane_processed_intents": {
+      "identifier_fastpath": 223,
+      "title_core": 280
+    },
+    "lane_dispatch_request_count": {
+      "identifier_fastpath": 104,
+      "title_core": 174
+    },
+    "lane_request_budgets": null,
+    "lane_runtime_budget_seconds": null,
+    "lane_stop_reasons": {},
+    "lane_skipped_group_count": {},
+    "lane_skipped_intents": {},
+    "lane_skip_reasons": {},
+    "lane_elapsed_ms": {
+      "identifier_fastpath": 139939,
+      "title_core": 364500
+    },
+    "openalex_batch_request_count": 2,
+    "non_batch_dispatch_request_count": 276,
+    "cache_hit_group_count": 0,
+    "fanout_candidate_count": 58,
+    "shared_title_reuse_group_count": 24,
+    "shared_title_reuse_intent_count": 48,
+    "shared_title_reuse_request_count": 24,
+    "shared_title_reuse_request_savings": 24,
+    "shared_title_reuse_request_savings_by_provider": {
+      "openalex": 12,
+      "crossref": 12
+    },
+    "title_lane_group_count": 256,
+    "title_lane_intent_count": 280,
+    "title_lane_group_counts_by_reason": {
+      "identifier_present_but_not_sufficient_for_provider_path": 236,
+      "cluster_leader_path": 20
+    },
+    "title_lane_intent_counts_by_reason": {
+      "identifier_present_but_not_sufficient_for_provider_path": 240,
+      "cluster_leader_path": 40
+    },
+    "title_lane_group_counts_by_provider": {
+      "openalex": 128,
+      "crossref": 128
+    },
+    "title_lane_intent_counts_by_provider": {
+      "openalex": 140,
+      "crossref": 140
+    },
+    "title_lane_group_counts_by_provider_reason": {
+      "openalex": {
+        "identifier_present_but_not_sufficient_for_provider_path": 118,
+        "cluster_leader_path": 10
+      },
+      "crossref": {
+        "identifier_present_but_not_sufficient_for_provider_path": 118,
+        "cluster_leader_path": 10
+      }
+    },
+    "title_lane_intent_counts_by_provider_reason": {
+      "openalex": {
+        "identifier_present_but_not_sufficient_for_provider_path": 120,
+        "cluster_leader_path": 20
+      },
+      "crossref": {
+        "identifier_present_but_not_sufficient_for_provider_path": 120,
+        "cluster_leader_path": 20
+      }
+    },
+    "title_lane_identifier_gap_group_counts_by_subreason": {
+      "url_canonical_only": 214,
+      "mixed_non_doi_identifier": 22
+    },
+    "title_lane_identifier_gap_intent_counts_by_subreason": {
+      "url_canonical_only": 216,
+      "mixed_non_doi_identifier": 24
+    },
+    "title_lane_identifier_gap_group_counts_by_provider_subreason": {
+      "openalex": {
+        "url_canonical_only": 107,
+        "mixed_non_doi_identifier": 11
+      },
+      "crossref": {
+        "url_canonical_only": 107,
+        "mixed_non_doi_identifier": 11
+      }
+    },
+    "title_lane_identifier_gap_intent_counts_by_provider_subreason": {
+      "openalex": {
+        "url_canonical_only": 108,
+        "mixed_non_doi_identifier": 12
+      },
+      "crossref": {
+        "url_canonical_only": 108,
+        "mixed_non_doi_identifier": 12
+      }
+    },
+    "title_lane_request_count": 174,
+    "title_lane_request_counts_by_reason": {
+      "identifier_present_but_not_sufficient_for_provider_path": 154,
+      "cluster_leader_path": 20
+    },
+    "title_lane_request_counts_by_provider": {
+      "openalex": 128,
+      "crossref": 46
+    },
+    "title_lane_request_counts_by_provider_reason": {
+      "openalex": {
+        "identifier_present_but_not_sufficient_for_provider_path": 118,
+        "cluster_leader_path": 10
+      },
+      "crossref": {
+        "identifier_present_but_not_sufficient_for_provider_path": 36,
+        "cluster_leader_path": 10
+      }
+    },
+    "title_lane_identifier_gap_request_counts_by_subreason": {
+      "url_canonical_only": 132,
+      "mixed_non_doi_identifier": 22
+    },
+    "title_lane_identifier_gap_request_counts_by_provider_subreason": {
+      "openalex": {
+        "url_canonical_only": 107,
+        "mixed_non_doi_identifier": 11
+      },
+      "crossref": {
+        "url_canonical_only": 25,
+        "mixed_non_doi_identifier": 11
+      }
+    },
+    "title_lane_cache_hit_group_count": 0,
+    "title_lane_cache_hit_counts_by_reason": {},
+    "title_lane_cache_hit_counts_by_provider": {},
+    "title_lane_identifier_gap_cache_hit_counts_by_subreason": {},
+    "title_lane_identifier_gap_cache_hit_counts_by_provider_subreason": {},
+    "title_lane_post_prelink_residual_group_count": 256,
+    "title_lane_post_prelink_residual_intent_count": 280,
+    "title_lane_post_prelink_residual_request_count": 174,
+    "dispatch_request_count": 278,
+    "request_savings_vs_runnable_intents": 225,
+    "processed_runnable_intents": 503,
+    "request_savings_vs_total_planned_intents": 225,
+    "request_savings_vs_processed_intents": 225,
+    "processed_runnable_fraction": 1.0
+  },
+  "paid_llm_usage": {
+    "present": false,
+    "note": "No paid LLM call path was exercised in this replay run."
+  }
+}

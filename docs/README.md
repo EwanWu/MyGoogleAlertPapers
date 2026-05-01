@@ -22,6 +22,11 @@ Read these first when you want the current project state, current default flow, 
 12. `docs/16-duplicate-provider-query-elimination-plan-2026-04-29.md`
 13. `docs/17-phase1-library-prelink-implementation-and-ablation-2026-04-29.md`
 14. `docs/validation/day6-same-batch-cluster-ablation-150-20260429.md`
+15. `docs/18-next-phase-runtime-hardening-plan-2026-04-29.md`
+16. `docs/19-phase2A-post-openalex-conditional-suppression-promotion-memo-2026-04-30.md`
+17. `docs/22-phase2B-final-promotion-gate-large-scale-decision-memo-2026-05-01.md`
+18. `docs/23-phase2B-narrow-activation-arxiv-gate-decision-memo-2026-05-01.md`
+19. `docs/24-phase2B-narrow-activation-arxiv-gate-promotion-memo-2026-05-01.md`
 
 ### Current active decision layer
 
@@ -37,6 +42,11 @@ Read these first when you want the current project state, current default flow, 
 - `docs/16-duplicate-provider-query-elimination-plan-2026-04-29.md`
 - `docs/17-phase1-library-prelink-implementation-and-ablation-2026-04-29.md`
 - `docs/validation/day6-same-batch-cluster-ablation-150-20260429.md`
+- `docs/18-next-phase-runtime-hardening-plan-2026-04-29.md`
+- `docs/19-phase2A-post-openalex-conditional-suppression-promotion-memo-2026-04-30.md`
+- `docs/22-phase2B-final-promotion-gate-large-scale-decision-memo-2026-05-01.md`
+- `docs/23-phase2B-narrow-activation-arxiv-gate-decision-memo-2026-05-01.md`
+- `docs/24-phase2B-narrow-activation-arxiv-gate-promotion-memo-2026-05-01.md`
 
 ### Current runtime / provider-lane validation
 
@@ -45,7 +55,12 @@ Read these first when you want the current project state, current default flow, 
 - `docs/16-duplicate-provider-query-elimination-plan-2026-04-29.md` — analysis + staged blueprint for suppressing repeated provider queries via exact library prelink, same-batch candidate clustering, and stronger article-identity aliases above the current query-cache layer
 - `docs/17-phase1-library-prelink-implementation-and-ablation-2026-04-29.md` — implementation archive + live control/treatment evidence showing that exact library-first prelink is now a proven, fixed workstream rather than a speculative idea
 - `docs/validation/day6-same-batch-cluster-ablation-150-20260429.md` — first same-batch exact clustering ablation on top of exact prelink; shows ~23.8% wall-time reduction and ~21.2% dispatch-request reduction on a synthetic duplicate stress slice, and now serves as the promotion basis for enabling exact same-batch clustering in the default runtime layer
-- code/runtime note: the builtin CLI default and baseline helper default are now aligned to the same-batch-clustered `identifier_fastpath + title_core` runtime, and the default runtime layer now enables both exact `library_prelink` and exact `same_batch_clustering` before residual provider fanout
+- `docs/18-next-phase-runtime-hardening-plan-2026-04-29.md` — active Phase 2A runtime-hardening log, including the rejection of blanket `crossref:url_canonical_only` skipping and the two-gate validation path for narrower title-lane suppression rules
+- `docs/19-phase2A-post-openalex-conditional-suppression-promotion-memo-2026-04-30.md` — current decision memo recommending promotion of the narrow post-openalex conditional suppression rule for `crossref:url_canonical_only`
+- `docs/22-phase2B-final-promotion-gate-large-scale-decision-memo-2026-05-01.md` — large-scale final gate showing that broad `top1 -> top5 + best-accepted` is semantically safe but not efficient enough for default promotion
+- `docs/23-phase2B-narrow-activation-arxiv-gate-decision-memo-2026-05-01.md` — narrow-rule analysis showing that all observed broad-treatment gains are concentrated in an arXiv-native residual subgroup
+- `docs/24-phase2B-narrow-activation-arxiv-gate-promotion-memo-2026-05-01.md` — formal promotion memo recommending only the narrow arXiv-gated `url_canonical_only -> top5 + best-accepted` exception
+- code/runtime note: the builtin CLI default and baseline helper default are now aligned to the same-batch-clustered `identifier_fastpath + title_core` runtime **with promoted post-openalex conditional suppression for `crossref:url_canonical_only`**; the new Phase 2B arXiv-gated top5 rule is implemented and promotion-approved, but not described here as already flipped into the builtin default unless a later change explicitly does that
 
 ### Current operations / data-acquisition validation
 

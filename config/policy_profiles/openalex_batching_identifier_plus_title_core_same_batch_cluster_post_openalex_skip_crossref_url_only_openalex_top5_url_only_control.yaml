@@ -1,0 +1,12 @@
+profile_name: openalex_batching_identifier_plus_title_core_same_batch_cluster_post_openalex_skip_crossref_url_only_openalex_top5_url_only_control
+summary: >
+  Experimental control profile for residual url_canonical_only OpenAlex title
+  queries: request the top 5 OpenAlex results but keep first-result selection,
+  so treatment can reuse the exact same recorded provider payloads.
+notes:
+  - Keep the promoted post-openalex crossref suppression rule unchanged
+  - Expand only OpenAlex url_canonical_only title retrieval depth to 5
+  - Preserve first-result selection as the control arm for same-fixture comparison
+runtime_rules:
+  openalex_title_per_page_by_subreason:
+    url_canonical_only: 5

@@ -1,0 +1,15 @@
+profile_name: openalex_batching_identifier_plus_title_core_same_batch_cluster_post_openalex_skip_crossref_url_only_openalex_top5_url_only
+summary: >
+  Narrow one-factor follow-up on the promoted post-openalex rule: for
+  residual url_canonical_only title-lane OpenAlex queries, fetch the top 5
+  OpenAlex title candidates and let the existing accept_result logic choose the
+  best acceptable match before deciding whether crossref still needs to run.
+notes:
+  - Keep the promoted post-openalex crossref suppression rule unchanged
+  - Use the same top-5 OpenAlex payload as the paired control profile
+  - Change only the local title-result selection rule for url_canonical_only
+runtime_rules:
+  openalex_title_per_page_by_subreason:
+    url_canonical_only: 5
+  openalex_title_pick_best_accepted_subreasons:
+    - url_canonical_only

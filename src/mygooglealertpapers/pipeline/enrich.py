@@ -12,13 +12,14 @@ from mygooglealertpapers.cost.tracker import CostTracker
 from mygooglealertpapers.db.repository import Repository
 from mygooglealertpapers.enrich.base import cache_metadata_from_record, cache_status_from_record, enrichment_record_from_json, enrichment_record_to_json
 from mygooglealertpapers.enrich.crossref import build_crossref_record, fetch_crossref_title_item, query_crossref
-from mygooglealertpapers.enrich.openalex import _extract_primary_location_fields, build_openalex_record, fetch_openalex_title_item, query_openalex, query_openalex_batch_by_doi
+from mygooglealertpapers.enrich.openalex import _extract_primary_location_fields, _pick_openalex_title_item, build_openalex_record, fetch_openalex_title_item, query_openalex, query_openalex_batch_by_doi
 from mygooglealertpapers.enrich.pubmed import query_pubmed
 from mygooglealertpapers.enrich.semanticscholar import build_semanticscholar_record, fetch_semanticscholar_title_item, query_semanticscholar
 from mygooglealertpapers.enrich.europepmc import query_europepmc
 from mygooglealertpapers.enrich.arxiv import query_arxiv
 from mygooglealertpapers.enrich.unpaywall import query_unpaywall
 from mygooglealertpapers.pipeline.candidate_resolution import (
+    _candidate_exact_keys,
     cluster_candidates_within_batch,
     library_prelink_enabled,
     prelink_candidates_against_library,
@@ -29,6 +30,15 @@ logger = logging.getLogger(__name__)
 PROGRESS_EVERY = 25
 IDENTIFIER_QUERY_TYPES = {'doi', 'doi_batch', 'pmid', 'pmcid', 'arxiv_id'}
 DEFAULT_LANE_ORDER = ['identifier_fastpath', 'title_core', 'biomedical_fallback', 'slow_fallback']
+TITLE_LANE_REASON_NO_IDENTIFIER = 'no_identifier_available'
+TITLE_LANE_REASON_IDENTIFIER_GAP = 'identifier_present_but_not_sufficient_for_provider_path'
+TITLE_LANE_REASON_CLUSTER_LEADER = 'cluster_leader_path'
+TITLE_LANE_SUBREASON_PMID_ONLY = 'pmid_without_doi'
+TITLE_LANE_SUBREASON_PMCID_ONLY = 'pmcid_only'
+TITLE_LANE_SUBREASON_URL_ONLY = 'url_canonical_only'
+TITLE_LANE_SUBREASON_SCHOLAR_ONLY = 'scholar_cluster_only'
+TITLE_LANE_SUBREASON_ARXIV_ONLY = 'arxiv_only'
+TITLE_LANE_SUBREASON_MIXED_NON_DOI = 'mixed_non_doi_identifier'
 
 
 @dataclass(slots=True)
@@ -97,6 +107,12 @@ def _build_same_batch_clustered_intents(
         for follower_candidate_id in leader_to_followers.get(candidate_id, []):
             intents.extend(_clone_intent_for_candidate(intent, follower_candidate_id) for intent in leader_intents)
     return intents
+
+
+def _candidate_exact_keys_from_enrich_row(row) -> dict[str, str]:
+    if row is None:
+        return {}
+    return _candidate_exact_keys((row[0], row[1], row[2], row[3], row[8], row[4], row[9], row[10]))
 
 
 def _canonical_query_key(query_type: str, value: str | None) -> str:
@@ -222,6 +238,393 @@ def _record_lane_skip(dispatch_stats: dict[str, object], group: DispatchGroup, *
     skip_reasons.setdefault(lane, reason)
 
 
+def _bump_counter(mapping: dict[str, int], key: str, delta: int = 1) -> None:
+    mapping[key] = int(mapping.get(key, 0) or 0) + delta
+
+
+def _bump_nested_counter(dispatch_stats: dict[str, object], field: str, key: str, delta: int = 1) -> None:
+    mapping = dispatch_stats.setdefault(field, {})
+    if not isinstance(mapping, dict):
+        mapping = {}
+        dispatch_stats[field] = mapping
+    _bump_counter(mapping, key, delta)
+
+
+def _bump_double_nested_counter(dispatch_stats: dict[str, object], field: str, outer_key: str, inner_key: str, delta: int = 1) -> None:
+    mapping = dispatch_stats.setdefault(field, {})
+    if not isinstance(mapping, dict):
+        mapping = {}
+        dispatch_stats[field] = mapping
+    child = mapping.setdefault(outer_key, {})
+    if not isinstance(child, dict):
+        child = {}
+        mapping[outer_key] = child
+    _bump_counter(child, inner_key, delta)
+
+
+def _identifier_gap_subreason_for_exact_keys(exact_keys: dict[str, str]) -> str | None:
+    non_doi_keys = {key for key in exact_keys if key != 'doi'}
+    if not non_doi_keys:
+        return None
+    if len(non_doi_keys) > 1:
+        return TITLE_LANE_SUBREASON_MIXED_NON_DOI
+    only_key = next(iter(non_doi_keys))
+    if only_key == 'pmid':
+        return TITLE_LANE_SUBREASON_PMID_ONLY
+    if only_key == 'pmcid':
+        return TITLE_LANE_SUBREASON_PMCID_ONLY
+    if only_key == 'url_canonical':
+        return TITLE_LANE_SUBREASON_URL_ONLY
+    if only_key == 'scholar_cluster':
+        return TITLE_LANE_SUBREASON_SCHOLAR_ONLY
+    if only_key == 'arxiv':
+        return TITLE_LANE_SUBREASON_ARXIV_ONLY
+    return TITLE_LANE_SUBREASON_MIXED_NON_DOI
+
+
+def _title_lane_reason_and_subreason_for_group(
+    group: DispatchGroup,
+    row_by_candidate: dict[str, object],
+    leader_to_followers: dict[str, list[str]],
+) -> tuple[str | None, str | None]:
+    if group.query_type != 'title' or _lane_for_group(group) != 'title_core':
+        return None, None
+    candidate_id = group.representative.candidate_id
+    if leader_to_followers.get(candidate_id):
+        return TITLE_LANE_REASON_CLUSTER_LEADER, None
+    exact_keys = _candidate_exact_keys_from_enrich_row(row_by_candidate.get(candidate_id))
+    if exact_keys:
+        return TITLE_LANE_REASON_IDENTIFIER_GAP, _identifier_gap_subreason_for_exact_keys(exact_keys)
+    return TITLE_LANE_REASON_NO_IDENTIFIER, None
+
+
+def _record_title_lane_group_planning(
+    dispatch_stats: dict[str, object],
+    group: DispatchGroup,
+    title_lane_reason: str | None,
+    title_lane_subreason: str | None,
+) -> None:
+    if title_lane_reason is None:
+        return
+    dispatch_stats['title_lane_group_count'] = int(dispatch_stats.get('title_lane_group_count', 0) or 0) + 1
+    dispatch_stats['title_lane_intent_count'] = int(dispatch_stats.get('title_lane_intent_count', 0) or 0) + len(group.intents)
+    dispatch_stats['title_lane_post_prelink_residual_group_count'] = int(dispatch_stats.get('title_lane_post_prelink_residual_group_count', 0) or 0) + 1
+    dispatch_stats['title_lane_post_prelink_residual_intent_count'] = int(dispatch_stats.get('title_lane_post_prelink_residual_intent_count', 0) or 0) + len(group.intents)
+    _bump_nested_counter(dispatch_stats, 'title_lane_group_counts_by_reason', title_lane_reason)
+    _bump_nested_counter(dispatch_stats, 'title_lane_intent_counts_by_reason', title_lane_reason, len(group.intents))
+    _bump_nested_counter(dispatch_stats, 'title_lane_group_counts_by_provider', group.provider)
+    _bump_nested_counter(dispatch_stats, 'title_lane_intent_counts_by_provider', group.provider, len(group.intents))
+    _bump_double_nested_counter(dispatch_stats, 'title_lane_group_counts_by_provider_reason', group.provider, title_lane_reason)
+    _bump_double_nested_counter(dispatch_stats, 'title_lane_intent_counts_by_provider_reason', group.provider, title_lane_reason, len(group.intents))
+    if title_lane_reason == TITLE_LANE_REASON_IDENTIFIER_GAP and title_lane_subreason:
+        _bump_nested_counter(dispatch_stats, 'title_lane_identifier_gap_group_counts_by_subreason', title_lane_subreason)
+        _bump_nested_counter(dispatch_stats, 'title_lane_identifier_gap_intent_counts_by_subreason', title_lane_subreason, len(group.intents))
+        _bump_double_nested_counter(dispatch_stats, 'title_lane_identifier_gap_group_counts_by_provider_subreason', group.provider, title_lane_subreason)
+        _bump_double_nested_counter(dispatch_stats, 'title_lane_identifier_gap_intent_counts_by_provider_subreason', group.provider, title_lane_subreason, len(group.intents))
+
+
+def _record_title_lane_request(
+    dispatch_stats: dict[str, object],
+    group: DispatchGroup,
+    title_lane_reason: str | None,
+    title_lane_subreason: str | None,
+) -> None:
+    if title_lane_reason is None:
+        return
+    dispatch_stats['title_lane_request_count'] = int(dispatch_stats.get('title_lane_request_count', 0) or 0) + 1
+    dispatch_stats['title_lane_post_prelink_residual_request_count'] = int(dispatch_stats.get('title_lane_post_prelink_residual_request_count', 0) or 0) + 1
+    _bump_nested_counter(dispatch_stats, 'title_lane_request_counts_by_reason', title_lane_reason)
+    _bump_nested_counter(dispatch_stats, 'title_lane_request_counts_by_provider', group.provider)
+    _bump_double_nested_counter(dispatch_stats, 'title_lane_request_counts_by_provider_reason', group.provider, title_lane_reason)
+    if title_lane_reason == TITLE_LANE_REASON_IDENTIFIER_GAP and title_lane_subreason:
+        _bump_nested_counter(dispatch_stats, 'title_lane_identifier_gap_request_counts_by_subreason', title_lane_subreason)
+        _bump_double_nested_counter(dispatch_stats, 'title_lane_identifier_gap_request_counts_by_provider_subreason', group.provider, title_lane_subreason)
+
+
+def _record_title_lane_cache_hit(
+    dispatch_stats: dict[str, object],
+    group: DispatchGroup,
+    title_lane_reason: str | None,
+    title_lane_subreason: str | None,
+) -> None:
+    if title_lane_reason is None:
+        return
+    dispatch_stats['title_lane_cache_hit_group_count'] = int(dispatch_stats.get('title_lane_cache_hit_group_count', 0) or 0) + 1
+    _bump_nested_counter(dispatch_stats, 'title_lane_cache_hit_counts_by_reason', title_lane_reason)
+    _bump_nested_counter(dispatch_stats, 'title_lane_cache_hit_counts_by_provider', group.provider)
+    if title_lane_reason == TITLE_LANE_REASON_IDENTIFIER_GAP and title_lane_subreason:
+        _bump_nested_counter(dispatch_stats, 'title_lane_identifier_gap_cache_hit_counts_by_subreason', title_lane_subreason)
+        _bump_double_nested_counter(dispatch_stats, 'title_lane_identifier_gap_cache_hit_counts_by_provider_subreason', group.provider, title_lane_subreason)
+
+
+def _experimental_title_skip_subreasons_by_provider(settings: Settings) -> dict[str, set[str]]:
+    value = _runtime_value(settings, 'title_lane_skip_subreasons_by_provider', {})
+    if not isinstance(value, dict):
+        return {}
+    result: dict[str, set[str]] = {}
+    for provider, subreasons in value.items():
+        if isinstance(subreasons, str):
+            items = {subreasons}
+        elif isinstance(subreasons, (list, tuple, set)):
+            items = {str(item) for item in subreasons if item not in (None, '')}
+        else:
+            continue
+        if items:
+            result[str(provider)] = items
+    return result
+
+
+def _experimental_title_skip_reason(
+    settings: Settings,
+    group: DispatchGroup,
+    title_lane_reason: str | None,
+    title_lane_subreason: str | None,
+) -> str | None:
+    if title_lane_reason != TITLE_LANE_REASON_IDENTIFIER_GAP or not title_lane_subreason:
+        return None
+    provider_rules = _experimental_title_skip_subreasons_by_provider(settings).get(group.provider)
+    if not provider_rules or title_lane_subreason not in provider_rules:
+        return None
+    return f'experimental_skip:{group.provider}:{title_lane_subreason}'
+
+
+def _record_experimental_title_skip(
+    dispatch_stats: dict[str, object],
+    group: DispatchGroup,
+    title_lane_reason: str | None,
+    title_lane_subreason: str | None,
+    skip_reason: str,
+) -> None:
+    dispatch_stats['experimental_skipped_group_count'] = int(dispatch_stats.get('experimental_skipped_group_count', 0) or 0) + 1
+    dispatch_stats['experimental_skipped_intent_count'] = int(dispatch_stats.get('experimental_skipped_intent_count', 0) or 0) + len(group.intents)
+    _bump_nested_counter(dispatch_stats, 'experimental_skipped_group_counts_by_provider', group.provider)
+    _bump_nested_counter(dispatch_stats, 'experimental_skipped_intent_counts_by_provider', group.provider, len(group.intents))
+    _bump_nested_counter(dispatch_stats, 'experimental_skipped_group_counts_by_reason', skip_reason)
+    _bump_nested_counter(dispatch_stats, 'experimental_skipped_intent_counts_by_reason', skip_reason, len(group.intents))
+    if title_lane_reason is not None:
+        _bump_nested_counter(dispatch_stats, 'experimental_skipped_group_counts_by_title_reason', title_lane_reason)
+        _bump_nested_counter(dispatch_stats, 'experimental_skipped_intent_counts_by_title_reason', title_lane_reason, len(group.intents))
+    if title_lane_subreason is not None:
+        _bump_nested_counter(dispatch_stats, 'experimental_skipped_group_counts_by_title_subreason', title_lane_subreason)
+        _bump_nested_counter(dispatch_stats, 'experimental_skipped_intent_counts_by_title_subreason', title_lane_subreason, len(group.intents))
+
+
+def _experimental_post_openalex_skip_subreasons_by_provider(settings: Settings) -> dict[str, set[str]]:
+    value = _runtime_value(settings, 'title_lane_post_openalex_skip_subreasons_by_provider', {})
+    if not isinstance(value, dict):
+        return {}
+    result: dict[str, set[str]] = {}
+    for provider, subreasons in value.items():
+        if isinstance(subreasons, str):
+            items = {subreasons}
+        elif isinstance(subreasons, (list, tuple, set)):
+            items = {str(item) for item in subreasons if item not in (None, '')}
+        else:
+            continue
+        if items:
+            result[str(provider)] = items
+    return result
+
+
+def _experimental_post_openalex_reorder_priority(
+    settings: Settings,
+    group: DispatchGroup,
+    title_lane_reason: str | None,
+    title_lane_subreason: str | None,
+) -> int:
+    if title_lane_reason != TITLE_LANE_REASON_IDENTIFIER_GAP or not title_lane_subreason:
+        return 2
+    provider_rules = _experimental_post_openalex_skip_subreasons_by_provider(settings)
+    targeted_subreasons = {subreason for items in provider_rules.values() for subreason in items}
+    if title_lane_subreason not in targeted_subreasons:
+        return 2
+    if group.provider == 'openalex':
+        return 0
+    if title_lane_subreason in provider_rules.get(group.provider, set()):
+        return 1
+    return 2
+
+
+def _openalex_title_per_page_by_subreason(settings: Settings) -> dict[str, int]:
+    value = _runtime_value(settings, 'openalex_title_per_page_by_subreason', {})
+    if not isinstance(value, dict):
+        return {}
+    result: dict[str, int] = {}
+    for subreason, per_page in value.items():
+        if per_page in (None, ''):
+            continue
+        result[str(subreason)] = max(1, min(int(per_page), 25))
+    return result
+
+
+def _openalex_title_extra_result_require_arxiv_id_subreasons(settings: Settings) -> set[str]:
+    value = _runtime_value(settings, 'openalex_title_extra_result_require_arxiv_id_subreasons', [])
+    if isinstance(value, str):
+        return {value}
+    if isinstance(value, (list, tuple, set)):
+        return {str(item) for item in value if item not in (None, '')}
+    return set()
+
+
+def _openalex_title_extra_result_group_allowed(
+    settings: Settings,
+    group: DispatchGroup,
+    title_lane_reason: str | None,
+    title_lane_subreason: str | None,
+) -> bool:
+    if title_lane_reason != TITLE_LANE_REASON_IDENTIFIER_GAP or not title_lane_subreason:
+        return True
+    restricted_subreasons = _openalex_title_extra_result_require_arxiv_id_subreasons(settings)
+    if title_lane_subreason not in restricted_subreasons:
+        return True
+    return bool(group.representative.arxiv_id)
+
+
+def _openalex_title_query_per_page(
+    settings: Settings,
+    group: DispatchGroup,
+    title_lane_reason: str | None,
+    title_lane_subreason: str | None,
+) -> int:
+    if group.provider != 'openalex' or group.query_type != 'title':
+        return 1
+    if title_lane_reason != TITLE_LANE_REASON_IDENTIFIER_GAP or not title_lane_subreason:
+        return 1
+    per_page = _openalex_title_per_page_by_subreason(settings).get(title_lane_subreason, 1)
+    if per_page <= 1:
+        return 1
+    if not _openalex_title_extra_result_group_allowed(settings, group, title_lane_reason, title_lane_subreason):
+        return 1
+    return per_page
+
+
+def _openalex_title_pick_best_accepted_subreasons(settings: Settings) -> set[str]:
+    value = _runtime_value(settings, 'openalex_title_pick_best_accepted_subreasons', [])
+    if isinstance(value, str):
+        return {value}
+    if isinstance(value, (list, tuple, set)):
+        return {str(item) for item in value if item not in (None, '')}
+    return set()
+
+
+def _openalex_title_should_pick_best_accepted(
+    settings: Settings,
+    group: DispatchGroup,
+    title_lane_reason: str | None,
+    title_lane_subreason: str | None,
+) -> bool:
+    if group.provider != 'openalex' or group.query_type != 'title':
+        return False
+    if title_lane_reason != TITLE_LANE_REASON_IDENTIFIER_GAP or not title_lane_subreason:
+        return False
+    if not _openalex_title_extra_result_group_allowed(settings, group, title_lane_reason, title_lane_subreason):
+        return False
+    return title_lane_subreason in _openalex_title_pick_best_accepted_subreasons(settings)
+
+
+def _openalex_prior_doi_title_match_status(conn, group: DispatchGroup) -> str:
+    for intent in group.intents:
+        row = conn.execute(
+            '''
+            SELECT matched, doi
+            FROM source_record
+            WHERE candidate_id = ? AND source_name = 'openalex' AND query_type = 'title'
+            ORDER BY id DESC
+            LIMIT 1
+            ''',
+            (intent.candidate_id,),
+        ).fetchone()
+        if row is None:
+            return 'openalex_missing_title_record'
+        matched, doi = row
+        if int(matched or 0) != 1:
+            return 'openalex_title_unmatched'
+        if not doi:
+            return 'openalex_title_match_without_doi'
+    return 'openalex_prior_doi_title_match'
+
+
+def _experimental_post_openalex_skip_reason(
+    settings: Settings,
+    conn,
+    group: DispatchGroup,
+    title_lane_reason: str | None,
+    title_lane_subreason: str | None,
+) -> str | None:
+    if group.provider != 'crossref' or group.query_type != 'title':
+        return None
+    if title_lane_reason != TITLE_LANE_REASON_IDENTIFIER_GAP or not title_lane_subreason:
+        return None
+    provider_rules = _experimental_post_openalex_skip_subreasons_by_provider(settings).get(group.provider)
+    if not provider_rules or title_lane_subreason not in provider_rules:
+        return None
+    if _openalex_prior_doi_title_match_status(conn, group) != 'openalex_prior_doi_title_match':
+        return None
+    return f'post_openalex_skip:{group.provider}:{title_lane_subreason}'
+
+
+def _experimental_post_openalex_non_suppression_reason(
+    settings: Settings,
+    conn,
+    group: DispatchGroup,
+    title_lane_reason: str | None,
+    title_lane_subreason: str | None,
+) -> str | None:
+    if group.provider != 'crossref' or group.query_type != 'title':
+        return None
+    if title_lane_reason != TITLE_LANE_REASON_IDENTIFIER_GAP or not title_lane_subreason:
+        return None
+    provider_rules = _experimental_post_openalex_skip_subreasons_by_provider(settings).get(group.provider)
+    if not provider_rules or title_lane_subreason not in provider_rules:
+        return None
+    status = _openalex_prior_doi_title_match_status(conn, group)
+    if status == 'openalex_prior_doi_title_match':
+        return None
+    return status
+
+
+def _record_experimental_post_openalex_skip(
+    dispatch_stats: dict[str, object],
+    group: DispatchGroup,
+    title_lane_reason: str | None,
+    title_lane_subreason: str | None,
+    skip_reason: str,
+) -> None:
+    dispatch_stats['post_openalex_suppressed_group_count'] = int(dispatch_stats.get('post_openalex_suppressed_group_count', 0) or 0) + 1
+    dispatch_stats['post_openalex_suppressed_intent_count'] = int(dispatch_stats.get('post_openalex_suppressed_intent_count', 0) or 0) + len(group.intents)
+    _bump_nested_counter(dispatch_stats, 'post_openalex_suppressed_group_counts_by_provider', group.provider)
+    _bump_nested_counter(dispatch_stats, 'post_openalex_suppressed_intent_counts_by_provider', group.provider, len(group.intents))
+    _bump_nested_counter(dispatch_stats, 'post_openalex_suppressed_group_counts_by_reason', skip_reason)
+    _bump_nested_counter(dispatch_stats, 'post_openalex_suppressed_intent_counts_by_reason', skip_reason, len(group.intents))
+    if title_lane_reason is not None:
+        _bump_nested_counter(dispatch_stats, 'post_openalex_suppressed_group_counts_by_title_reason', title_lane_reason)
+        _bump_nested_counter(dispatch_stats, 'post_openalex_suppressed_intent_counts_by_title_reason', title_lane_reason, len(group.intents))
+    if title_lane_subreason is not None:
+        _bump_nested_counter(dispatch_stats, 'post_openalex_suppressed_group_counts_by_title_subreason', title_lane_subreason)
+        _bump_nested_counter(dispatch_stats, 'post_openalex_suppressed_intent_counts_by_title_subreason', title_lane_subreason, len(group.intents))
+
+
+def _record_experimental_post_openalex_non_suppression(
+    dispatch_stats: dict[str, object],
+    group: DispatchGroup,
+    title_lane_reason: str | None,
+    title_lane_subreason: str | None,
+    non_suppression_reason: str,
+) -> None:
+    dispatch_stats['post_openalex_unsuppressed_targeted_group_count'] = int(dispatch_stats.get('post_openalex_unsuppressed_targeted_group_count', 0) or 0) + 1
+    dispatch_stats['post_openalex_unsuppressed_targeted_intent_count'] = int(dispatch_stats.get('post_openalex_unsuppressed_targeted_intent_count', 0) or 0) + len(group.intents)
+    _bump_nested_counter(dispatch_stats, 'post_openalex_unsuppressed_targeted_group_counts_by_provider', group.provider)
+    _bump_nested_counter(dispatch_stats, 'post_openalex_unsuppressed_targeted_intent_counts_by_provider', group.provider, len(group.intents))
+    _bump_nested_counter(dispatch_stats, 'post_openalex_unsuppressed_targeted_group_counts_by_reason', non_suppression_reason)
+    _bump_nested_counter(dispatch_stats, 'post_openalex_unsuppressed_targeted_intent_counts_by_reason', non_suppression_reason, len(group.intents))
+    if title_lane_reason is not None:
+        _bump_nested_counter(dispatch_stats, 'post_openalex_unsuppressed_targeted_group_counts_by_title_reason', title_lane_reason)
+        _bump_nested_counter(dispatch_stats, 'post_openalex_unsuppressed_targeted_intent_counts_by_title_reason', title_lane_reason, len(group.intents))
+    if title_lane_subreason is not None:
+        _bump_nested_counter(dispatch_stats, 'post_openalex_unsuppressed_targeted_group_counts_by_title_subreason', title_lane_subreason)
+        _bump_nested_counter(dispatch_stats, 'post_openalex_unsuppressed_targeted_intent_counts_by_title_subreason', title_lane_subreason, len(group.intents))
+
+
 def _lane_budget_stop_reason(
     settings: Settings,
     dispatch_stats: dict[str, object],
@@ -268,7 +671,13 @@ def _mark_lane_request_started(lane_runtime_state: dict[str, dict[str, float] | 
     lane_runtime_state['active_lane'] = lane
 
 
-def _prepare_dispatch_groups(settings: Settings, runnable_intents: list[ProviderIntent]) -> tuple[list[DispatchGroup], dict[str, int], dict[str, int]]:
+def _prepare_dispatch_groups(
+    settings: Settings,
+    runnable_intents: list[ProviderIntent],
+    *,
+    row_by_candidate: dict[str, object] | None = None,
+    leader_to_followers: dict[str, list[str]] | None = None,
+) -> tuple[list[DispatchGroup], dict[str, int], dict[str, int]]:
     base_groups = _build_dispatch_groups(settings, runnable_intents)
     enabled_lanes = _enabled_lanes(settings)
     lane_order = _lane_order(settings)
@@ -280,6 +689,26 @@ def _prepare_dispatch_groups(settings: Settings, runnable_intents: list[Provider
         if enabled_lanes is not None and lane not in enabled_lanes:
             continue
         lane_groups.setdefault(lane, []).append(group)
+
+    if row_by_candidate is not None and leader_to_followers is not None:
+        for lane, groups in lane_groups.items():
+            if not groups:
+                continue
+            decorated: list[tuple[int, int, DispatchGroup]] = []
+            for idx, group in enumerate(groups):
+                title_lane_reason, title_lane_subreason = _title_lane_reason_and_subreason_for_group(
+                    group,
+                    row_by_candidate,
+                    leader_to_followers,
+                )
+                priority = _experimental_post_openalex_reorder_priority(
+                    settings,
+                    group,
+                    title_lane_reason,
+                    title_lane_subreason,
+                )
+                decorated.append((priority, idx, group))
+            lane_groups[lane] = [group for _, _, group in sorted(decorated, key=lambda item: (item[0], item[1]))]
 
     ordered_groups: list[DispatchGroup] = []
     seen_lanes: set[str] = set()
@@ -445,8 +874,8 @@ def _dispatch_signature(intent: ProviderIntent) -> tuple[object, ...]:
     )
 
 
-def _cache_field_set_hash(intent: ProviderIntent) -> str:
-    if intent.query_type in IDENTIFIER_QUERY_TYPES:
+def _cache_field_set_hash(intent: ProviderIntent, *, query_variant: str | None = None) -> str:
+    if intent.query_type in IDENTIFIER_QUERY_TYPES and not query_variant:
         return 'default'
     payload = {
         'query_type': intent.query_type,
@@ -457,6 +886,7 @@ def _cache_field_set_hash(intent: ProviderIntent) -> str:
         'first_author_family': intent.first_author_family or '',
         'venue_guess': intent.venue_guess or '',
         'year_guess': intent.year_guess or '',
+        'query_variant': query_variant or '',
     }
     digest = hashlib.sha1(json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode('utf-8')).hexdigest()
     return f'ctx_{digest[:16]}'
@@ -555,15 +985,15 @@ def _fanout_error_to_group(repo: Repository, tracker: CostTracker, conn, group: 
     return len(group.intents)
 
 
-def _group_field_set_hash(group: DispatchGroup) -> str:
-    return _cache_field_set_hash(group.representative)
+def _group_field_set_hash(group: DispatchGroup, *, query_variant: str | None = None) -> str:
+    return _cache_field_set_hash(group.representative, query_variant=query_variant)
 
 
 def _provider_title_payload_reuse_enabled(settings: Settings, provider: str) -> bool:
     return bool(_provider_value(settings, provider, 'title_payload_reuse_enabled', False))
 
 
-def _build_title_reused_records(settings: Settings, group: DispatchGroup):
+def _build_title_reused_records(settings: Settings, group: DispatchGroup, *, openalex_title_per_page: int = 1, openalex_pick_best_accepted: bool = False):
     title = group.representative.norm_title
     if not title:
         return None
@@ -586,14 +1016,32 @@ def _build_title_reused_records(settings: Settings, group: DispatchGroup):
             for intent in group.intents
         ]
     if provider == 'openalex':
-        item, raw_payload_json, latency_ms = fetch_openalex_title_item(title, email=settings.openalex_email)
+        item, raw_payload_json, latency_ms = fetch_openalex_title_item(
+            title,
+            email=settings.openalex_email,
+            per_page=openalex_title_per_page,
+            doi=group.representative.doi,
+            first_author_family=group.representative.first_author_family,
+            venue_hint=group.representative.venue_guess,
+            query_year=group.representative.year_guess,
+            pick_best_accepted=openalex_pick_best_accepted,
+        )
+        payload = json.loads(raw_payload_json) if raw_payload_json else {}
+        results = payload.get('results') if isinstance(payload, dict) else None
         return [
             build_openalex_record(
                 intent.candidate_id,
                 query_type='title',
                 query_string=title,
                 doi=intent.doi,
-                item=item,
+                item=_pick_openalex_title_item(
+                    title,
+                    results if isinstance(results, list) else ([item] if item else []),
+                    doi=intent.doi,
+                    first_author_family=intent.first_author_family,
+                    venue_hint=intent.venue_guess,
+                    query_year=intent.year_guess,
+                ) if openalex_pick_best_accepted else item,
                 raw_payload_json=raw_payload_json,
                 latency_ms=latency_ms,
                 first_author_family=intent.first_author_family,
@@ -622,7 +1070,7 @@ def _build_title_reused_records(settings: Settings, group: DispatchGroup):
     return None
 
 
-def _execute_provider_query(settings: Settings, intent: ProviderIntent):
+def _execute_provider_query(settings: Settings, intent: ProviderIntent, *, openalex_title_per_page: int = 1, openalex_pick_best_accepted: bool = False):
     if intent.provider == 'pubmed':
         return query_pubmed(intent.candidate_id, pmid=intent.pmid, title=intent.norm_title, first_author_family=intent.first_author_family, venue_hint=intent.venue_guess, query_year=intent.year_guess, candidate_doi=intent.doi)
     if intent.provider == 'europepmc':
@@ -634,7 +1082,7 @@ def _execute_provider_query(settings: Settings, intent: ProviderIntent):
     if intent.provider == 'crossref':
         return query_crossref(intent.candidate_id, doi=intent.doi, title=intent.norm_title, first_author_family=intent.first_author_family, venue_hint=intent.venue_guess, query_year=intent.year_guess, mailto=settings.crossref_mailto)
     if intent.provider == 'openalex':
-        return query_openalex(intent.candidate_id, doi=intent.doi, title=intent.norm_title, first_author_family=intent.first_author_family, venue_hint=intent.venue_guess, query_year=intent.year_guess, email=settings.openalex_email)
+        return query_openalex(intent.candidate_id, doi=intent.doi, title=intent.norm_title, first_author_family=intent.first_author_family, venue_hint=intent.venue_guess, query_year=intent.year_guess, email=settings.openalex_email, title_per_page=openalex_title_per_page, title_pick_best_accepted=openalex_pick_best_accepted)
     if intent.provider == 'unpaywall':
         return query_unpaywall(intent.candidate_id, doi=intent.doi, email=settings.unpaywall_email)
     return None
@@ -668,22 +1116,53 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
         prelink_summary = prelink_candidates_against_library(settings, repo, tracker, conn, rows)
         prelinked_candidate_ids = set(prelink_summary['prelinked_candidate_ids'])
         unresolved_rows = [row for row in rows if row[0] not in prelinked_candidate_ids]
+        unresolved_row_by_candidate = {row[0]: row for row in unresolved_rows}
 
         naive_unresolved_intents: list[ProviderIntent] = []
         for row in unresolved_rows:
             naive_unresolved_intents.extend(_build_provider_intents(settings, row[:8]))
 
         cluster_summary = cluster_candidates_within_batch(settings, repo, conn, unresolved_rows)
+        leader_to_followers = dict(cluster_summary.get('leader_to_followers') or {})
         unresolved_intents = _build_same_batch_clustered_intents(settings, unresolved_rows, cluster_summary)
 
         runnable_intents = [intent for intent in unresolved_intents if _should_run_provider(repo, conn, intent)]
-        dispatch_groups, lane_group_counts, lane_intent_counts = _prepare_dispatch_groups(settings, runnable_intents)
+        pre_experimental_runnable_provider_intents = len(runnable_intents)
+        pre_experimental_dispatch_groups, _, _ = _prepare_dispatch_groups(
+            settings,
+            runnable_intents,
+            row_by_candidate=unresolved_row_by_candidate,
+            leader_to_followers=leader_to_followers,
+        )
+
+        experimental_skipped_groups: list[tuple[DispatchGroup, str | None, str | None, str]] = []
+        dispatch_groups: list[DispatchGroup] = []
+        for group in pre_experimental_dispatch_groups:
+            title_lane_reason, title_lane_subreason = _title_lane_reason_and_subreason_for_group(
+                group,
+                unresolved_row_by_candidate,
+                leader_to_followers,
+            )
+            skip_reason = _experimental_title_skip_reason(settings, group, title_lane_reason, title_lane_subreason)
+            if skip_reason:
+                experimental_skipped_groups.append((group, title_lane_reason, title_lane_subreason, skip_reason))
+                continue
+            dispatch_groups.append(group)
+
+        runnable_intents = [intent for group in dispatch_groups for intent in group.intents]
+        lane_group_counts, lane_intent_counts = {}, {}
+        for group in dispatch_groups:
+            lane = _lane_for_group(group)
+            lane_group_counts[lane] = int(lane_group_counts.get(lane, 0) or 0) + 1
+            lane_intent_counts[lane] = int(lane_intent_counts.get(lane, 0) or 0) + len(group.intents)
+
         naive_dispatch_groups, _, _ = _prepare_dispatch_groups(settings, naive_unresolved_intents)
         clustered_dispatch_groups, _, _ = _prepare_dispatch_groups(settings, unresolved_intents)
         logger.info(
-            'Planned %s provider intent(s); %s need work; %s dispatch group(s) after safe dedup; lanes=%s',
+            'Planned %s provider intent(s); %s need work before experimental skips; %s dispatch group(s) after safe dedup; %s dispatch group(s) after experimental skips; lanes=%s',
             len(all_intents),
-            len(runnable_intents),
+            pre_experimental_runnable_provider_intents,
+            len(pre_experimental_dispatch_groups),
             len(dispatch_groups),
             lane_group_counts,
         )
@@ -706,10 +1185,47 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
             'planned_provider_intents': planned_provider_intents,
             'prelink_skipped_provider_intents': planned_provider_intents - len(naive_unresolved_intents),
             'unresolved_provider_intents': len(unresolved_intents),
+            'pre_experimental_runnable_provider_intents': pre_experimental_runnable_provider_intents,
+            'experimental_skipped_provider_intents': pre_experimental_runnable_provider_intents - len(runnable_intents),
             'runnable_provider_intents': len(runnable_intents),
+            'pre_experimental_dispatch_group_count': len(pre_experimental_dispatch_groups),
+            'experimental_skipped_group_count': 0,
+            'experimental_skipped_intent_count': 0,
+            'experimental_skipped_group_counts_by_provider': {},
+            'experimental_skipped_intent_counts_by_provider': {},
+            'experimental_skipped_group_counts_by_reason': {},
+            'experimental_skipped_intent_counts_by_reason': {},
+            'experimental_skipped_group_counts_by_title_reason': {},
+            'experimental_skipped_intent_counts_by_title_reason': {},
+            'experimental_skipped_group_counts_by_title_subreason': {},
+            'experimental_skipped_intent_counts_by_title_subreason': {},
+            'post_openalex_suppressed_group_count': 0,
+            'post_openalex_suppressed_intent_count': 0,
+            'post_openalex_suppressed_group_counts_by_provider': {},
+            'post_openalex_suppressed_intent_counts_by_provider': {},
+            'post_openalex_suppressed_group_counts_by_reason': {},
+            'post_openalex_suppressed_intent_counts_by_reason': {},
+            'post_openalex_suppressed_group_counts_by_title_reason': {},
+            'post_openalex_suppressed_intent_counts_by_title_reason': {},
+            'post_openalex_suppressed_group_counts_by_title_subreason': {},
+            'post_openalex_suppressed_intent_counts_by_title_subreason': {},
+            'post_openalex_unsuppressed_targeted_group_count': 0,
+            'post_openalex_unsuppressed_targeted_intent_count': 0,
+            'post_openalex_unsuppressed_targeted_group_counts_by_provider': {},
+            'post_openalex_unsuppressed_targeted_intent_counts_by_provider': {},
+            'post_openalex_unsuppressed_targeted_group_counts_by_reason': {},
+            'post_openalex_unsuppressed_targeted_intent_counts_by_reason': {},
+            'post_openalex_unsuppressed_targeted_group_counts_by_title_reason': {},
+            'post_openalex_unsuppressed_targeted_intent_counts_by_title_reason': {},
+            'post_openalex_unsuppressed_targeted_group_counts_by_title_subreason': {},
+            'post_openalex_unsuppressed_targeted_intent_counts_by_title_subreason': {},
             'dispatch_group_count': len(dispatch_groups),
             'lane_order': _lane_order(settings),
             'enabled_lanes': sorted(_enabled_lanes(settings)) if _enabled_lanes(settings) is not None else None,
+            'experimental_title_skip_subreasons_by_provider': {provider: sorted(subreasons) for provider, subreasons in _experimental_title_skip_subreasons_by_provider(settings).items()} or None,
+            'experimental_post_openalex_skip_subreasons_by_provider': {provider: sorted(subreasons) for provider, subreasons in _experimental_post_openalex_skip_subreasons_by_provider(settings).items()} or None,
+            'openalex_title_per_page_by_subreason': _openalex_title_per_page_by_subreason(settings) or None,
+            'openalex_title_pick_best_accepted_subreasons': sorted(_openalex_title_pick_best_accepted_subreasons(settings)) or None,
             'lane_group_counts': lane_group_counts,
             'lane_intent_counts': lane_intent_counts,
             'lane_processed_intents': {lane: 0 for lane in lane_intent_counts},
@@ -729,7 +1245,55 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
             'shared_title_reuse_intent_count': 0,
             'shared_title_reuse_request_count': 0,
             'shared_title_reuse_request_savings': 0,
+            'shared_title_reuse_request_savings_by_provider': {},
+            'title_lane_group_count': 0,
+            'title_lane_intent_count': 0,
+            'title_lane_group_counts_by_reason': {},
+            'title_lane_intent_counts_by_reason': {},
+            'title_lane_group_counts_by_provider': {},
+            'title_lane_intent_counts_by_provider': {},
+            'title_lane_group_counts_by_provider_reason': {},
+            'title_lane_intent_counts_by_provider_reason': {},
+            'title_lane_identifier_gap_group_counts_by_subreason': {},
+            'title_lane_identifier_gap_intent_counts_by_subreason': {},
+            'title_lane_identifier_gap_group_counts_by_provider_subreason': {},
+            'title_lane_identifier_gap_intent_counts_by_provider_subreason': {},
+            'title_lane_request_count': 0,
+            'title_lane_request_counts_by_reason': {},
+            'title_lane_request_counts_by_provider': {},
+            'title_lane_request_counts_by_provider_reason': {},
+            'title_lane_identifier_gap_request_counts_by_subreason': {},
+            'title_lane_identifier_gap_request_counts_by_provider_subreason': {},
+            'title_lane_cache_hit_group_count': 0,
+            'title_lane_cache_hit_counts_by_reason': {},
+            'title_lane_cache_hit_counts_by_provider': {},
+            'title_lane_identifier_gap_cache_hit_counts_by_subreason': {},
+            'title_lane_identifier_gap_cache_hit_counts_by_provider_subreason': {},
+            'title_lane_post_prelink_residual_group_count': 0,
+            'title_lane_post_prelink_residual_intent_count': 0,
+            'title_lane_post_prelink_residual_request_count': 0,
         }
+        for group, title_lane_reason, title_lane_subreason, skip_reason in experimental_skipped_groups:
+            _record_experimental_title_skip(
+                dispatch_stats,
+                group,
+                title_lane_reason,
+                title_lane_subreason,
+                skip_reason,
+            )
+        for group in dispatch_groups:
+            title_lane_reason, title_lane_subreason = _title_lane_reason_and_subreason_for_group(
+                group,
+                unresolved_row_by_candidate,
+                leader_to_followers,
+            )
+            _record_title_lane_group_planning(
+                dispatch_stats,
+                group,
+                title_lane_reason,
+                title_lane_subreason,
+            )
+
         lane_runtime_state: dict[str, dict[str, float] | str | None] = {
             'lane_started_at': {},
             'lane_ended_at': {},
@@ -860,6 +1424,67 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
                 continue
 
             lane = _lane_for_group(group)
+            title_lane_reason, title_lane_subreason = _title_lane_reason_and_subreason_for_group(
+                group,
+                unresolved_row_by_candidate,
+                leader_to_followers,
+            )
+
+            post_openalex_skip_reason = _experimental_post_openalex_skip_reason(
+                settings,
+                conn,
+                group,
+                title_lane_reason,
+                title_lane_subreason,
+            )
+            if post_openalex_skip_reason:
+                _record_experimental_post_openalex_skip(
+                    dispatch_stats,
+                    group,
+                    title_lane_reason,
+                    title_lane_subreason,
+                    post_openalex_skip_reason,
+                )
+                processed_intents += len(group.intents)
+                _bump_lane_processed(dispatch_stats, group, len(group.intents))
+                if processed_intents % PROGRESS_EVERY == 0:
+                    logger.info('Enrich progress: processed %s / %s runnable intent(s)', processed_intents, len(runnable_intents))
+                    _refresh_lane_elapsed(dispatch_stats, lane_runtime_state)
+                    _persist_dispatch_progress(repo, conn, run_id=run_id, started_at=started_at, processed_intents=processed_intents, dispatch_stats=dispatch_stats)
+                    conn.commit()
+                continue
+
+            post_openalex_non_suppression_reason = _experimental_post_openalex_non_suppression_reason(
+                settings,
+                conn,
+                group,
+                title_lane_reason,
+                title_lane_subreason,
+            )
+            if post_openalex_non_suppression_reason:
+                _record_experimental_post_openalex_non_suppression(
+                    dispatch_stats,
+                    group,
+                    title_lane_reason,
+                    title_lane_subreason,
+                    post_openalex_non_suppression_reason,
+                )
+
+            openalex_title_per_page = _openalex_title_query_per_page(
+                settings,
+                group,
+                title_lane_reason,
+                title_lane_subreason,
+            )
+            openalex_pick_best_accepted = _openalex_title_should_pick_best_accepted(
+                settings,
+                group,
+                title_lane_reason,
+                title_lane_subreason,
+            )
+            query_variant = None
+            if group.provider == 'openalex' and group.query_type == 'title' and (openalex_title_per_page > 1 or openalex_pick_best_accepted):
+                query_variant = f'openalex_title_per_page:{openalex_title_per_page}|pick_best:{int(openalex_pick_best_accepted)}'
 
             logger.info(
                 'Enrich dispatch %s/%s: provider=%s query_type=%s query_key=%s fanout=%s',
@@ -871,12 +1496,13 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
                 len(group.intents),
             )
             _start_group_statuses(repo, conn, group)
-            field_set_hash = _group_field_set_hash(group)
+            field_set_hash = _group_field_set_hash(group, query_variant=query_variant)
             cached = repo.get_query_cache(conn, provider=group.provider, query_type=group.query_type, query_key=group.query_key, field_set_hash=field_set_hash)
             if cached:
                 cached_rec = enrichment_record_from_json(cached[0])
                 if cache_status_from_record(cached_rec) != 'transient_error':
                     dispatch_stats['cache_hit_group_count'] += 1
+                    _record_title_lane_cache_hit(dispatch_stats, group, title_lane_reason, title_lane_subreason)
                     rec = _record_from_cache(group.representative, cached[0])
                     delta = _fanout_result_to_group(repo, tracker, conn, group, rec, cache_hit=True)
                     processed_intents += delta
@@ -896,10 +1522,16 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
             _mark_lane_request_started(lane_runtime_state, lane)
             dispatch_stats['non_batch_dispatch_request_count'] += 1
             _bump_lane_request(dispatch_stats, lane)
+            _record_title_lane_request(dispatch_stats, group, title_lane_reason, title_lane_subreason)
             shared_title_reuse = group.query_type == 'title' and len(group.intents) > 1 and _provider_title_payload_reuse_enabled(settings, group.provider)
             if shared_title_reuse:
                 try:
-                    records = _build_title_reused_records(settings, group)
+                    records = _build_title_reused_records(
+                        settings,
+                        group,
+                        openalex_title_per_page=openalex_title_per_page,
+                        openalex_pick_best_accepted=openalex_pick_best_accepted,
+                    )
                 except Exception as exc:
                     from mygooglealertpapers.enrich.base import EnrichmentRecord
                     rec = EnrichmentRecord(
@@ -938,7 +1570,9 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
                     dispatch_stats['shared_title_reuse_group_count'] += 1
                     dispatch_stats['shared_title_reuse_intent_count'] += len(group.intents)
                     dispatch_stats['shared_title_reuse_request_count'] += 1
-                    dispatch_stats['shared_title_reuse_request_savings'] += max(len(group.intents) - 1, 0)
+                    request_savings = max(len(group.intents) - 1, 0)
+                    dispatch_stats['shared_title_reuse_request_savings'] += request_savings
+                    _bump_nested_counter(dispatch_stats, 'shared_title_reuse_request_savings_by_provider', group.provider, request_savings)
                     for intent, rec in zip(group.intents, records, strict=True):
                         repo.put_query_cache(
                             conn,
@@ -946,7 +1580,7 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
                             query_type=group.query_type,
                             query_key=group.query_key,
                             response_json=enrichment_record_to_json(rec),
-                            **cache_metadata_from_record(rec, field_set_hash=_cache_field_set_hash(intent)),
+                            **cache_metadata_from_record(rec, field_set_hash=_cache_field_set_hash(intent, query_variant=query_variant)),
                         )
                     delta = _fanout_records_to_group(repo, tracker, conn, group, records, cache_hit=False, notes='shared_title_reuse')
                     processed_intents += delta
@@ -959,7 +1593,12 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
                     continue
 
             try:
-                rec = _execute_provider_query(settings, group.representative)
+                rec = _execute_provider_query(
+                    settings,
+                    group.representative,
+                    openalex_title_per_page=openalex_title_per_page,
+                    openalex_pick_best_accepted=openalex_pick_best_accepted,
+                )
             except Exception as exc:
                 from mygooglealertpapers.enrich.base import EnrichmentRecord
                 rec = EnrichmentRecord(
