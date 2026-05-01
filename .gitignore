@@ -24,3 +24,8 @@ data/exports/*
 !data/exports/.gitkeep
 data/eval/*
 !data/eval/.gitkeep
+
+data/benchmark/
+data/raw_mail_exports/
+data/task_state/
+logs/
