@@ -1,0 +1,21 @@
+profile_name: openalex_batching_identifier_plus_title_core_same_batch_cluster_post_openalex_skip_crossref_url_only_openalex_top5_url_only_arxiv_gate_targeted_nonarxiv_reject71_review08
+summary: >
+  Default precision-first Phase 2B profile: keep the promoted arXiv-gated
+  residual OpenAlex top5 + best-accepted exception, and additionally apply the
+  validated non-arXiv deterministic cleanup route that rejects the strongest
+  normalized-only fallback mismatches at <=0.71 and routes only the remaining
+  borderline tail at <=0.80 to review.
+notes:
+  - Retains the promoted post-openalex crossref suppression runtime
+  - Retains the narrow arXiv-gated url_canonical_only OpenAlex top5 exception
+  - Promotes the non-arXiv reject71 + review08 residual cleanup route into the builtin default
+runtime_rules:
+  openalex_title_per_page_by_subreason:
+    url_canonical_only: 5
+  openalex_title_pick_best_accepted_subreasons:
+    - url_canonical_only
+  openalex_title_extra_result_require_arxiv_id_subreasons:
+    - url_canonical_only
+merge_rules:
+  fallback_reject_similarity_threshold_post_openalex_url_only_non_arxiv: 0.71
+  fallback_review_similarity_threshold_post_openalex_url_only_non_arxiv: 0.8

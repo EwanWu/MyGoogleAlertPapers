@@ -14,7 +14,7 @@ Read this first if you need the shortest path to:
 
 The project is now in:
 
-> **default-flow operational hardening with exact library-first prelink + same-batch clustering active, Phase 2A crossref title suppression promoted, broad Phase 2B top5 rejected, and a narrow Phase 2B arXiv-gated residual top5 exception now bound into the default runtime as the retained patch**
+> **default-flow operational hardening with exact library-first prelink + same-batch clustering active, Phase 2A crossref title suppression promoted, broad Phase 2B top5 rejected, and both retained narrow Phase 2B patches — the arXiv-gated residual top5 exception and the precision-first non-arXiv `reject71 + review08` cleanup route — now bound into the default runtime**
 
 The pipeline is no longer mainly exploring strategy space. The current work is about locking one coherent default path, hardening the operator/runtime boundary around it, and only promoting narrow request-efficiency optimizations after deterministic replay evidence. As of 2026-04-29, this now includes an active exact library-first prelink layer above provider dispatch rather than treating duplicate-query elimination as a future-only idea.
 
@@ -41,6 +41,7 @@ Runtime defaults now additionally assume:
 - post-openalex conditional suppression for `crossref:url_canonical_only`
 - broad `top1 -> top5 + best-accepted` remains rejected as a default residual upgrade
 - narrow `url_canonical_only + arxiv_id_extracted -> top5 + best-accepted` is now the retained Phase 2B promotion result and has now been flipped into the builtin runtime default as a narrow exception rather than a broad residual-path upgrade
+- narrow non-arXiv `targeted_nonarxiv_reject71_review08` is now also promoted into the builtin default as a precision-first residual cleanup rule for the remaining non-arXiv `url_canonical_only` subgroup
 
 ## Recent hardening phase now absorbed into the mainline view
 
@@ -102,6 +103,8 @@ The current runtime-default additions are justified by a smaller but decision-gr
 - `docs/22-phase2B-final-promotion-gate-large-scale-decision-memo-2026-05-01.md`
 - `docs/23-phase2B-narrow-activation-arxiv-gate-decision-memo-2026-05-01.md`
 - `docs/24-phase2B-narrow-activation-arxiv-gate-promotion-memo-2026-05-01.md`
+- `docs/25-phase2B-targeted-nonarxiv-reject71-review08-promotion-posture-memo-2026-05-02.md`
+- `docs/26-phase2B-targeted-nonarxiv-reject71-review08-promotion-memo-2026-05-02.md`
 
 What these established:
 - Day 2 operator-boundary hardening is in place and regression-tested
@@ -115,6 +118,7 @@ What these established:
 - this promotion is no longer only documentary: the builtin runtime default and the baseline helper default should now both bind to the same-batch-cluster-enabled synchronous profile rather than the earlier pre-clustering `identifier_plus_title_core` default
 - the current Phase 2A strict-rule result is now also decision-grade and has now been bound into the promoted runtime default: blanket `crossref:url_canonical_only` skipping was rejected for semantic regression, while the narrower post-openalex conditional suppression rule passed both fixed-slice and fresh-like semantic gates and is now the retained narrow runtime hardening rule for that subgroup
 - Phase 2B has now also closed the next residual question: broad `top1 -> top5 + best-accepted` failed the large-scale efficiency gate on 956 candidates, but retrospective exact subgroup validation showed that all 4 observed final-confidence gains were concentrated in a 26-candidate arXiv-native residual subgroup, so the retained Phase 2B result is a narrow promoted exception rather than a broad default flip
+- the remaining non-arXiv residual cleanup route now also has a durable runner and passed exact reproducibility against the prior day11 stable replay; that route has now crossed the final policy bar and is promoted into the builtin default explicitly as a precision-first cleanup rule rather than a neutral runtime tweak
 
 ## Active document set to read now
 
@@ -136,10 +140,12 @@ What these established:
 16. `docs/22-phase2B-final-promotion-gate-large-scale-decision-memo-2026-05-01.md`
 17. `docs/23-phase2B-narrow-activation-arxiv-gate-decision-memo-2026-05-01.md`
 18. `docs/24-phase2B-narrow-activation-arxiv-gate-promotion-memo-2026-05-01.md`
+19. `docs/25-phase2B-targeted-nonarxiv-reject71-review08-promotion-posture-memo-2026-05-02.md`
+20. `docs/26-phase2B-targeted-nonarxiv-reject71-review08-promotion-memo-2026-05-02.md`
 
 ## What is still open
 
-The main unresolved problem is no longer whether staged live lanes are viable, nor whether exact library-first prelink is worth implementing, nor whether exact same-batch clustering can matter in practice. All three are now established and have now been promoted into the default runtime layer. The current unresolved problem is now narrower still: **after rejecting broad residual `top5` promotion and retaining only the arXiv-gated exception, how to continue improving the remaining non-arXiv `url_canonical_only` residual path without reintroducing broad top5 cost**.
+The main unresolved problem is no longer whether staged live lanes are viable, nor whether exact library-first prelink is worth implementing, nor whether exact same-batch clustering can matter in practice. All three are now established and have now been promoted into the default runtime layer. The Phase 2B non-arXiv residual default-policy question is now also closed: the project has accepted the precision-first trade of `targeted_nonarxiv_reject71_review08` as a builtin default addition. The next unresolved problem is therefore narrower again: **whether the surviving review band `(0.71, 0.80]` should stay as review, or whether part of it can be safely collapsed further without reopening broad residual risk**.
 
 The next useful validation / rollout step is:
 - preserve the current promoted mainline/runtime defaults

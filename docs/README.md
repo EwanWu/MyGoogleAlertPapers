@@ -27,6 +27,8 @@ Read these first when you want the current project state, current default flow, 
 17. `docs/22-phase2B-final-promotion-gate-large-scale-decision-memo-2026-05-01.md`
 18. `docs/23-phase2B-narrow-activation-arxiv-gate-decision-memo-2026-05-01.md`
 19. `docs/24-phase2B-narrow-activation-arxiv-gate-promotion-memo-2026-05-01.md`
+20. `docs/25-phase2B-targeted-nonarxiv-reject71-review08-promotion-posture-memo-2026-05-02.md`
+21. `docs/26-phase2B-targeted-nonarxiv-reject71-review08-promotion-memo-2026-05-02.md`
 
 ### Current active decision layer
 
@@ -47,6 +49,8 @@ Read these first when you want the current project state, current default flow, 
 - `docs/22-phase2B-final-promotion-gate-large-scale-decision-memo-2026-05-01.md`
 - `docs/23-phase2B-narrow-activation-arxiv-gate-decision-memo-2026-05-01.md`
 - `docs/24-phase2B-narrow-activation-arxiv-gate-promotion-memo-2026-05-01.md`
+- `docs/25-phase2B-targeted-nonarxiv-reject71-review08-promotion-posture-memo-2026-05-02.md`
+- `docs/26-phase2B-targeted-nonarxiv-reject71-review08-promotion-memo-2026-05-02.md`
 
 ### Current runtime / provider-lane validation
 
@@ -60,7 +64,9 @@ Read these first when you want the current project state, current default flow, 
 - `docs/22-phase2B-final-promotion-gate-large-scale-decision-memo-2026-05-01.md` — large-scale final gate showing that broad `top1 -> top5 + best-accepted` is semantically safe but not efficient enough for default promotion
 - `docs/23-phase2B-narrow-activation-arxiv-gate-decision-memo-2026-05-01.md` — narrow-rule analysis showing that all observed broad-treatment gains are concentrated in an arXiv-native residual subgroup
 - `docs/24-phase2B-narrow-activation-arxiv-gate-promotion-memo-2026-05-01.md` — formal promotion memo recommending only the narrow arXiv-gated `url_canonical_only -> top5 + best-accepted` exception
-- code/runtime note: the builtin CLI default and baseline helper default are now aligned to the same-batch-clustered `identifier_fastpath + title_core` runtime **with promoted post-openalex conditional suppression for `crossref:url_canonical_only` and the promoted narrow arXiv-gated `url_canonical_only -> top5 + best-accepted` exception enabled by default**
+- `docs/25-phase2B-targeted-nonarxiv-reject71-review08-promotion-posture-memo-2026-05-02.md` — pre-promotion posture memo capturing the last decision gate before defaultization
+- `docs/26-phase2B-targeted-nonarxiv-reject71-review08-promotion-memo-2026-05-02.md` — final promotion memo approving the non-arXiv `reject71 + review08` route as a precision-first builtin default addition
+- code/runtime note: the builtin CLI default and baseline helper default are now aligned to the same-batch-clustered `identifier_fastpath + title_core` runtime **with promoted post-openalex conditional suppression for `crossref:url_canonical_only`, the promoted narrow arXiv-gated `url_canonical_only -> top5 + best-accepted` exception, and the promoted precision-first non-arXiv `reject71 + review08` cleanup route all enabled by default**
 
 ### Current operations / data-acquisition validation
 

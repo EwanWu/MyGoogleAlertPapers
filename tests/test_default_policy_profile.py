@@ -6,9 +6,11 @@ from mygooglealertpapers.config import _default_policy_profile
 def test_builtin_default_policy_profile_promotes_post_openalex_crossref_suppression_runtime():
     profile = _default_policy_profile()
 
-    assert profile.name == 'builtin_identifier_plus_title_core_same_batch_cluster_post_openalex_skip_crossref_url_only_openalex_top5_url_only_arxiv_gate_default'
+    assert profile.name == 'builtin_identifier_plus_title_core_same_batch_cluster_post_openalex_skip_crossref_url_only_openalex_top5_url_only_arxiv_gate_targeted_nonarxiv_reject71_review08_default'
     assert profile.merge_value('normalized_only_fallback') is True
     assert profile.merge_value('fallback_reject_author_blob_identifier_aware') is True
+    assert profile.merge_value('fallback_reject_similarity_threshold_post_openalex_url_only_non_arxiv') == 0.71
+    assert profile.merge_value('fallback_review_similarity_threshold_post_openalex_url_only_non_arxiv') == 0.8
     assert profile.runtime_value('enabled_lanes') == ['identifier_fastpath', 'title_core']
     assert profile.runtime_value('lane_order') == ['identifier_fastpath', 'title_core', 'biomedical_fallback', 'slow_fallback']
     assert profile.runtime_value('library_prelink_enabled') is True

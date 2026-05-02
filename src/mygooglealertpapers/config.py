@@ -78,7 +78,7 @@ def _load_external_imap_skill_env(account: str | None = None) -> dict[str, str]:
 
 def _default_policy_profile() -> PolicyProfile:
     raw = {
-        'profile_name': 'builtin_identifier_plus_title_core_same_batch_cluster_post_openalex_skip_crossref_url_only_openalex_top5_url_only_arxiv_gate_default',
+        'profile_name': 'builtin_identifier_plus_title_core_same_batch_cluster_post_openalex_skip_crossref_url_only_openalex_top5_url_only_arxiv_gate_targeted_nonarxiv_reject71_review08_default',
         'provider_rules': {
             'crossref': {'enabled': True, 'title_payload_reuse_enabled': True},
             'openalex': {'enabled': True, 'doi_batch_enabled': True, 'title_payload_reuse_enabled': True},
@@ -91,6 +91,8 @@ def _default_policy_profile() -> PolicyProfile:
             'pubmed_title_doi_suppression': True,
             'normalized_only_fallback': True,
             'fallback_reject_author_blob_identifier_aware': True,
+            'fallback_reject_similarity_threshold_post_openalex_url_only_non_arxiv': 0.71,
+            'fallback_review_similarity_threshold_post_openalex_url_only_non_arxiv': 0.8,
         },
         'runtime_rules': {
             'lane_order': ['identifier_fastpath', 'title_core', 'biomedical_fallback', 'slow_fallback'],
