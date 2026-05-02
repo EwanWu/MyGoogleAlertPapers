@@ -16,7 +16,7 @@ def test_build_baseline_manifest_uses_current_runtime_default_profile_and_standa
 
     assert manifest['preset'] == 'small-fixed'
     assert manifest['limit'] == 60
-    assert manifest['policy_profile'].endswith('config/policy_profiles/openalex_batching_identifier_plus_title_core_same_batch_cluster_post_openalex_skip_crossref_url_only.yaml')
+    assert manifest['policy_profile'].endswith('config/policy_profiles/openalex_batching_identifier_plus_title_core_same_batch_cluster_post_openalex_skip_crossref_url_only_openalex_top5_url_only_arxiv_gate.yaml')
     assert manifest['source_db'].endswith('data/mgap_pkgB_large_slice150_seed_20260416_slice150.db')
     assert manifest['output_db'].endswith('data/benchmark/day2_baseline_small-fixed_unit.db')
     assert manifest['report_out'].endswith('docs/validation/day2-baseline-small-fixed-unit.json')

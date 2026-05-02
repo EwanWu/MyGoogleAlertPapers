@@ -78,7 +78,7 @@ def _load_external_imap_skill_env(account: str | None = None) -> dict[str, str]:
 
 def _default_policy_profile() -> PolicyProfile:
     raw = {
-        'profile_name': 'builtin_identifier_plus_title_core_same_batch_cluster_post_openalex_skip_crossref_url_only_default',
+        'profile_name': 'builtin_identifier_plus_title_core_same_batch_cluster_post_openalex_skip_crossref_url_only_openalex_top5_url_only_arxiv_gate_default',
         'provider_rules': {
             'crossref': {'enabled': True, 'title_payload_reuse_enabled': True},
             'openalex': {'enabled': True, 'doi_batch_enabled': True, 'title_payload_reuse_enabled': True},
@@ -100,6 +100,11 @@ def _default_policy_profile() -> PolicyProfile:
             'title_lane_post_openalex_skip_subreasons_by_provider': {
                 'crossref': ['url_canonical_only'],
             },
+            'openalex_title_per_page_by_subreason': {
+                'url_canonical_only': 5,
+            },
+            'openalex_title_pick_best_accepted_subreasons': ['url_canonical_only'],
+            'openalex_title_extra_result_require_arxiv_id_subreasons': ['url_canonical_only'],
         },
         'replay_defaults': {
             'stages': ['enrich', 'merge', 'dedup'],

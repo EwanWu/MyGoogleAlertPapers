@@ -1,4 +1,4 @@
-# Project phase map and current status (updated 2026-05-01, Phase 2B narrow arXiv-gated promotion follow-up)
+# Project phase map and current status (updated 2026-05-02, Phase 2B narrow arXiv-gated default flip)
 
 ## Purpose
 
@@ -14,7 +14,7 @@ Read this first if you need the shortest path to:
 
 The project is now in:
 
-> **default-flow operational hardening with exact library-first prelink + same-batch clustering active, Phase 2A crossref title suppression promoted, broad Phase 2B top5 rejected, and a narrow Phase 2B arXiv-gated residual top5 exception promoted as the next retained patch**
+> **default-flow operational hardening with exact library-first prelink + same-batch clustering active, Phase 2A crossref title suppression promoted, broad Phase 2B top5 rejected, and a narrow Phase 2B arXiv-gated residual top5 exception now bound into the default runtime as the retained patch**
 
 The pipeline is no longer mainly exploring strategy space. The current work is about locking one coherent default path, hardening the operator/runtime boundary around it, and only promoting narrow request-efficiency optimizations after deterministic replay evidence. As of 2026-04-29, this now includes an active exact library-first prelink layer above provider dispatch rather than treating duplicate-query elimination as a future-only idea.
 
@@ -40,7 +40,7 @@ Runtime defaults now additionally assume:
 - title payload reuse enabled by default for `crossref` / `openalex` / `semanticscholar`
 - post-openalex conditional suppression for `crossref:url_canonical_only`
 - broad `top1 -> top5 + best-accepted` remains rejected as a default residual upgrade
-- narrow `url_canonical_only + arxiv_id_extracted -> top5 + best-accepted` is now the retained Phase 2B promotion result, but should be read as promotion-approved logic rather than already-flipped builtin default unless a later runtime-default change explicitly says so
+- narrow `url_canonical_only + arxiv_id_extracted -> top5 + best-accepted` is now the retained Phase 2B promotion result and has now been flipped into the builtin runtime default as a narrow exception rather than a broad residual-path upgrade
 
 ## Recent hardening phase now absorbed into the mainline view
 
