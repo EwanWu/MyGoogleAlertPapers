@@ -1,0 +1,46 @@
+{
+  "status": "ok",
+  "failed_stage": null,
+  "error_message": null,
+  "source_db": "/home/ewan/NewCareer/Openclaw/proj/MyGoogleAlertPapers/data/mgap_issac_100.db",
+  "output_db": "/home/ewan/NewCareer/Openclaw/proj/MyGoogleAlertPapers/data/benchmark/day12_issac100_targeted_nonarxiv_reject71_review08_20260502.db",
+  "policy_profile": "/home/ewan/NewCareer/Openclaw/proj/MyGoogleAlertPapers/config/policy_profiles/openalex_batching_identifier_plus_title_core_same_batch_cluster_post_openalex_skip_crossref_url_only_targeted_nonarxiv_reject71_review08.yaml",
+  "policy_profile_name": "openalex_batching_identifier_plus_title_core_same_batch_cluster_post_openalex_skip_crossref_url_only_targeted_nonarxiv_reject71_review08",
+  "http_fixture_record": null,
+  "http_fixture_replay": null,
+  "stages": [
+    "merge",
+    "dedup"
+  ],
+  "source_candidate_count": 244,
+  "replay_candidate_count": 244,
+  "normalized_candidate_count": 244,
+  "dirty_doi_source_count": 7,
+  "dirty_doi_output_count": 7,
+  "dirty_doi_repaired_count": 0,
+  "provider_intent_count": 440,
+  "source_record_count": 440,
+  "matched_source_record_count": 339,
+  "merged_metadata_proposal_count": 238,
+  "normalized_only_fallback_proposal_count": 26,
+  "canonical_paper_count": 207,
+  "merge_review_queue_count": 4,
+  "cost_event_count": 482,
+  "batch_run_count": 2,
+  "severe_doi_conflict_count": 3,
+  "total_batch_duration_ms": 169,
+  "total_provider_latency_ms": 0,
+  "provider_summary": [
+    {
+      "provider": "none",
+      "events": 482,
+      "total_latency_ms": 0,
+      "estimated_cost_usd": 0.0
+    }
+  ],
+  "enrich_dispatch_summary": {},
+  "paid_llm_usage": {
+    "present": false,
+    "note": "No paid LLM call path was exercised in this replay run."
+  }
+}
