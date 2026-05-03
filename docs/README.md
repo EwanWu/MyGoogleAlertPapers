@@ -29,6 +29,8 @@ Read these first when you want the current project state, current default flow, 
 19. `docs/24-phase2B-narrow-activation-arxiv-gate-promotion-memo-2026-05-01.md`
 20. `docs/25-phase2B-targeted-nonarxiv-reject71-review08-promotion-posture-memo-2026-05-02.md`
 21. `docs/26-phase2B-targeted-nonarxiv-reject71-review08-promotion-memo-2026-05-02.md`
+22. `docs/27-phase2B-truncated-title-salvage-default-retention-memo-2026-05-02.md`
+23. `docs/29-phase2B-openalex-repository-shadow-topk-retry-default-retention-memo-2026-05-03.md`
 
 ### Current active decision layer
 
@@ -51,6 +53,8 @@ Read these first when you want the current project state, current default flow, 
 - `docs/24-phase2B-narrow-activation-arxiv-gate-promotion-memo-2026-05-01.md`
 - `docs/25-phase2B-targeted-nonarxiv-reject71-review08-promotion-posture-memo-2026-05-02.md`
 - `docs/26-phase2B-targeted-nonarxiv-reject71-review08-promotion-memo-2026-05-02.md`
+- `docs/27-phase2B-truncated-title-salvage-default-retention-memo-2026-05-02.md`
+- `docs/29-phase2B-openalex-repository-shadow-topk-retry-default-retention-memo-2026-05-03.md`
 
 ### Current runtime / provider-lane validation
 
@@ -66,7 +70,9 @@ Read these first when you want the current project state, current default flow, 
 - `docs/24-phase2B-narrow-activation-arxiv-gate-promotion-memo-2026-05-01.md` — formal promotion memo recommending only the narrow arXiv-gated `url_canonical_only -> top5 + best-accepted` exception
 - `docs/25-phase2B-targeted-nonarxiv-reject71-review08-promotion-posture-memo-2026-05-02.md` — pre-promotion posture memo capturing the last decision gate before defaultization
 - `docs/26-phase2B-targeted-nonarxiv-reject71-review08-promotion-memo-2026-05-02.md` — final promotion memo approving the non-arXiv `reject71 + review08` route as a precision-first builtin default addition
-- code/runtime note: the builtin CLI default and baseline helper default are now aligned to the same-batch-clustered `identifier_fastpath + title_core` runtime **with promoted post-openalex conditional suppression for `crossref:url_canonical_only`, the promoted narrow arXiv-gated `url_canonical_only -> top5 + best-accepted` exception, and the promoted precision-first non-arXiv `reject71 + review08` cleanup route all enabled by default**
+- `docs/27-phase2B-truncated-title-salvage-default-retention-memo-2026-05-02.md` — formal memo closing the follow-up default question for the narrow truncated-title salvage rule; this is a shared acceptance-layer retention decision, not a new YAML profile promotion
+- `docs/29-phase2B-openalex-repository-shadow-topk-retry-default-retention-memo-2026-05-03.md` — formal memo closing the repository-shadow follow-up default question; this is a shared OpenAlex-title-path retention decision, not a new YAML profile promotion
+- code/runtime note: the builtin CLI default and baseline helper default are now aligned to the same-batch-clustered `identifier_fastpath + title_core` runtime **with promoted post-openalex conditional suppression for `crossref:url_canonical_only`, the promoted narrow arXiv-gated `url_canonical_only -> top5 + best-accepted` exception, the promoted precision-first non-arXiv `reject71 + review08` cleanup route, the retained narrow truncated-title salvage acceptance repair, and the retained narrow OpenAlex repository-shadow topk retry all enabled in the current default path**
 
 ### Current operations / data-acquisition validation
 

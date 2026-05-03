@@ -1,0 +1,20 @@
+profile_name: openalex_batching_identifier_plus_title_core_same_batch_cluster_post_openalex_skip_crossref_url_only_openalex_top5_url_only_arxiv_gate_targeted_nonarxiv_reject71_review08_url_identity_doi_recovery
+summary: >
+  Experimental day13 profile: keep the current precision-first Phase 2B default,
+  and add a narrow deterministic URL-identity DOI recovery lane before title fanout.
+notes:
+  - Retains the promoted post-openalex crossref suppression runtime
+  - Retains the narrow arXiv-gated url_canonical_only OpenAlex top5 exception
+  - Retains the promoted non-arXiv reject71 + review08 residual cleanup route
+  - Adds deterministic URL identity DOI recovery before title dispatch
+runtime_rules:
+  openalex_title_per_page_by_subreason:
+    url_canonical_only: 5
+  openalex_title_pick_best_accepted_subreasons:
+    - url_canonical_only
+  openalex_title_extra_result_require_arxiv_id_subreasons:
+    - url_canonical_only
+  url_identity_doi_recovery_enabled: true
+merge_rules:
+  fallback_reject_similarity_threshold_post_openalex_url_only_non_arxiv: 0.71
+  fallback_review_similarity_threshold_post_openalex_url_only_non_arxiv: 0.8

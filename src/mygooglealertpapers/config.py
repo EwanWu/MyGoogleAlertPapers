@@ -50,6 +50,7 @@ class Settings:
     semantic_scholar_api_key: str | None
     unpaywall_email: str | None
     policy_profile: PolicyProfile
+    openalex_api_key: str | None = None
 
 
 def _skill_env_path() -> Path:
@@ -201,4 +202,5 @@ def load_settings() -> Settings:
         semantic_scholar_api_key=os.getenv('SEMANTIC_SCHOLAR_API_KEY'),
         unpaywall_email=os.getenv('UNPAYWALL_EMAIL'),
         policy_profile=policy_profile,
+        openalex_api_key=os.getenv('OPENALEX_API_KEY'),
     )

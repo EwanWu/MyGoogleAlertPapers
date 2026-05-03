@@ -7,6 +7,13 @@ from mygooglealertpapers.enrich.base import EnrichmentRecord, accept_result
 from mygooglealertpapers.enrich.http_client import request_json
 
 
+def _crossref_url(base: str, params: dict[str, object]) -> str:
+    filtered = {key: value for key, value in params.items() if value not in (None, '')}
+    if not filtered:
+        return base
+    return f"{base}?{urllib.parse.urlencode(filtered)}"
+
+
 def _crossref_title_value(item: dict) -> str | None:
     return (item.get('title') or [None])[0] if isinstance(item.get('title'), list) else item.get('title')
 
@@ -21,7 +28,8 @@ def _crossref_authors(item: dict) -> list[str]:
 
 
 def _crossref_year(item: dict) -> str | None:
-    date_parts = (((item.get('published-print') or item.get('published-online') or {}).get('date-parts') or [[None]])[0])
+    date_source = item.get('published-print') or item.get('published-online') or item.get('published') or item.get('issued') or {}
+    date_parts = ((date_source.get('date-parts') or [[None]])[0])
     if date_parts and date_parts[0]:
         return str(date_parts[0])
     return None
@@ -78,9 +86,14 @@ def build_crossref_record(
 
 
 def fetch_crossref_title_item(title: str, *, mailto: str | None = None) -> tuple[dict | None, str, int]:
-    url = f"https://api.crossref.org/works?query.title={urllib.parse.quote(title)}&rows=1"
-    if mailto:
-        url += f"&mailto={urllib.parse.quote(mailto)}"
+    url = _crossref_url(
+        'https://api.crossref.org/works',
+        {
+            'query.title': title,
+            'rows': 1,
+            'mailto': mailto,
+        },
+    )
     response = request_json('crossref', url, contact_email=mailto)
     if not response.ok:
         return None, json.dumps(response.to_error_payload(), ensure_ascii=False), response.latency_ms
@@ -93,9 +106,12 @@ def fetch_crossref_title_item(title: str, *, mailto: str | None = None) -> tuple
 
 def query_crossref(candidate_id: str, *, doi: str | None, title: str | None, first_author_family: str | None = None, venue_hint: str | None = None, query_year: str | None = None, mailto: str | None = None) -> EnrichmentRecord | None:
     if doi:
-        url = f"https://api.crossref.org/works/{urllib.parse.quote(doi)}"
-        if mailto:
-            url += f"?mailto={urllib.parse.quote(mailto)}"
+        url = _crossref_url(
+            f"https://api.crossref.org/works/{urllib.parse.quote(doi)}",
+            {
+                'mailto': mailto,
+                },
+        )
         response = request_json('crossref', url, contact_email=mailto)
         if not response.ok:
             return EnrichmentRecord(candidate_id, 'crossref', 'doi', doi, False, None, None, None, None, None, None, None, None, doi, None, None, None, json.dumps(response.to_error_payload(), ensure_ascii=False), response.latency_ms)

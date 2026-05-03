@@ -18,6 +18,7 @@ from mygooglealertpapers.enrich.semanticscholar import build_semanticscholar_rec
 from mygooglealertpapers.enrich.europepmc import query_europepmc
 from mygooglealertpapers.enrich.arxiv import query_arxiv
 from mygooglealertpapers.enrich.unpaywall import query_unpaywall
+from mygooglealertpapers.normalize.identifiers import recover_doi_from_url_identity
 from mygooglealertpapers.pipeline.candidate_resolution import (
     _candidate_exact_keys,
     cluster_candidates_within_batch,
@@ -102,7 +103,7 @@ def _build_same_batch_clustered_intents(
         candidate_id = row[0]
         if candidate_id in follower_to_leader:
             continue
-        leader_intents = _build_provider_intents(settings, row[:8])
+        leader_intents = _build_provider_intents(settings, row)
         intents.extend(leader_intents)
         for follower_candidate_id in leader_to_followers.get(candidate_id, []):
             intents.extend(_clone_intent_for_candidate(intent, follower_candidate_id) for intent in leader_intents)
@@ -825,42 +826,47 @@ def _bump_lane_request(dispatch_stats: dict[str, object], lane: str, delta: int 
 
 
 def _build_provider_intents(settings: Settings, row) -> list[ProviderIntent]:
-    candidate_id, norm_title, doi, pmid, arxiv_id, first_author_family, venue_guess, year_guess = row
+    candidate_id, norm_title, doi, pmid, arxiv_id, first_author_family, venue_guess, year_guess = row[:8]
+    effective_doi = doi
+    if not effective_doi and _runtime_value(settings, 'url_identity_doi_recovery_enabled', False):
+        url_canonical = row[9] if len(row) > 9 else None
+        if url_canonical and not arxiv_id:
+            effective_doi, _ = recover_doi_from_url_identity(url_canonical)
     intents: list[ProviderIntent] = []
-    if doi or norm_title:
-        query_type = 'doi' if doi else 'title'
-        query_key = _canonical_query_key(query_type, doi or norm_title)
+    if effective_doi or norm_title:
+        query_type = 'doi' if effective_doi else 'title'
+        query_key = _canonical_query_key(query_type, effective_doi or norm_title)
         for provider in ['crossref', 'openalex', 'semanticscholar']:
             if _provider_enabled(settings, provider, True):
                 intents.append(
-                    ProviderIntent(candidate_id, provider, query_type, query_key, norm_title, doi, pmid, arxiv_id, first_author_family, venue_guess, year_guess)
+                    ProviderIntent(candidate_id, provider, query_type, query_key, norm_title, effective_doi, pmid, arxiv_id, first_author_family, venue_guess, year_guess)
                 )
 
     is_biomedical = _looks_biomedical(venue_guess, norm_title)
     if _provider_enabled(settings, 'pubmed', True):
         if pmid:
             intents.append(
-                ProviderIntent(candidate_id, 'pubmed', 'pmid', _canonical_query_key('pmid', pmid), norm_title, doi, pmid, arxiv_id, first_author_family, venue_guess, year_guess)
+                ProviderIntent(candidate_id, 'pubmed', 'pmid', _canonical_query_key('pmid', pmid), norm_title, effective_doi, pmid, arxiv_id, first_author_family, venue_guess, year_guess)
             )
-        elif norm_title and not doi and is_biomedical:
+        elif norm_title and not effective_doi and is_biomedical:
             intents.append(
-                ProviderIntent(candidate_id, 'pubmed', 'title', _canonical_query_key('title', norm_title), norm_title, doi, pmid, arxiv_id, first_author_family, venue_guess, year_guess)
+                ProviderIntent(candidate_id, 'pubmed', 'title', _canonical_query_key('title', norm_title), norm_title, effective_doi, pmid, arxiv_id, first_author_family, venue_guess, year_guess)
             )
 
     if _provider_enabled(settings, 'europepmc', True):
         europepmc_trigger_mode = str(_provider_value(settings, 'europepmc', 'trigger_mode', 'narrowed_biomedical_fallback') or 'narrowed_biomedical_fallback')
         if pmid:
             intents.append(
-                ProviderIntent(candidate_id, 'europepmc', 'pmid', _canonical_query_key('pmid', pmid), norm_title, doi, pmid, arxiv_id, first_author_family, venue_guess, year_guess)
+                ProviderIntent(candidate_id, 'europepmc', 'pmid', _canonical_query_key('pmid', pmid), norm_title, effective_doi, pmid, arxiv_id, first_author_family, venue_guess, year_guess)
             )
         elif norm_title and is_biomedical:
-            allow_title_fallback = not doi and europepmc_trigger_mode in {'narrowed_biomedical_fallback', 'broad_biomedical'}
-            allow_doi_biomedical = bool(doi) and europepmc_trigger_mode == 'broad_biomedical'
+            allow_title_fallback = not effective_doi and europepmc_trigger_mode in {'narrowed_biomedical_fallback', 'broad_biomedical'}
+            allow_doi_biomedical = bool(effective_doi) and europepmc_trigger_mode == 'broad_biomedical'
             if allow_title_fallback or allow_doi_biomedical:
-                query_type = 'doi' if allow_doi_biomedical and doi else 'title'
-                query_key = _canonical_query_key(query_type, doi if query_type == 'doi' else norm_title)
+                query_type = 'doi' if allow_doi_biomedical and effective_doi else 'title'
+                query_key = _canonical_query_key(query_type, effective_doi if query_type == 'doi' else norm_title)
                 intents.append(
-                    ProviderIntent(candidate_id, 'europepmc', query_type, query_key, norm_title, doi, pmid, arxiv_id, first_author_family, venue_guess, year_guess)
+                    ProviderIntent(candidate_id, 'europepmc', query_type, query_key, norm_title, effective_doi, pmid, arxiv_id, first_author_family, venue_guess, year_guess)
                 )
 
     if _provider_enabled(settings, 'arxiv', True):
@@ -870,13 +876,13 @@ def _build_provider_intents(settings: Settings, row) -> list[ProviderIntent]:
             arxiv_query_type = 'arxiv_id' if arxiv_id else 'title'
             arxiv_query_key = _canonical_query_key(arxiv_query_type if arxiv_query_type != 'arxiv_id' else 'title', arxiv_id or norm_title)
             intents.append(
-                ProviderIntent(candidate_id, 'arxiv', arxiv_query_type, arxiv_query_key, norm_title, doi, pmid, arxiv_id, first_author_family, venue_guess, year_guess)
+                ProviderIntent(candidate_id, 'arxiv', arxiv_query_type, arxiv_query_key, norm_title, effective_doi, pmid, arxiv_id, first_author_family, venue_guess, year_guess)
             )
 
     if _provider_enabled(settings, 'unpaywall', False):
-        if doi:
+        if effective_doi:
             intents.append(
-                ProviderIntent(candidate_id, 'unpaywall', 'doi', _canonical_query_key('doi', doi), norm_title, doi, pmid, arxiv_id, first_author_family, venue_guess, year_guess)
+                ProviderIntent(candidate_id, 'unpaywall', 'doi', _canonical_query_key('doi', effective_doi), norm_title, effective_doi, pmid, arxiv_id, first_author_family, venue_guess, year_guess)
             )
 
     return intents
@@ -1107,6 +1113,7 @@ def _build_title_reused_records(settings: Settings, group: DispatchGroup, *, ope
         item, raw_payload_json, latency_ms = fetch_openalex_title_item(
             title,
             email=settings.openalex_email,
+            api_key=settings.openalex_api_key,
             per_page=openalex_title_per_page,
             doi=group.representative.doi,
             first_author_family=group.representative.first_author_family,
@@ -1170,7 +1177,7 @@ def _execute_provider_query(settings: Settings, intent: ProviderIntent, *, opena
     if intent.provider == 'crossref':
         return query_crossref(intent.candidate_id, doi=intent.doi, title=intent.norm_title, first_author_family=intent.first_author_family, venue_hint=intent.venue_guess, query_year=intent.year_guess, mailto=settings.crossref_mailto)
     if intent.provider == 'openalex':
-        return query_openalex(intent.candidate_id, doi=intent.doi, title=intent.norm_title, first_author_family=intent.first_author_family, venue_hint=intent.venue_guess, query_year=intent.year_guess, email=settings.openalex_email, title_per_page=openalex_title_per_page, title_pick_best_accepted=openalex_pick_best_accepted)
+        return query_openalex(intent.candidate_id, doi=intent.doi, title=intent.norm_title, first_author_family=intent.first_author_family, venue_hint=intent.venue_guess, query_year=intent.year_guess, email=settings.openalex_email, api_key=settings.openalex_api_key, title_per_page=openalex_title_per_page, title_pick_best_accepted=openalex_pick_best_accepted)
     if intent.provider == 'unpaywall':
         return query_unpaywall(intent.candidate_id, doi=intent.doi, email=settings.unpaywall_email)
     return None
@@ -1199,7 +1206,7 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
 
         all_intents: list[ProviderIntent] = []
         for row in rows:
-            all_intents.extend(_build_provider_intents(settings, row[:8]))
+            all_intents.extend(_build_provider_intents(settings, row))
 
         prelink_summary = prelink_candidates_against_library(settings, repo, tracker, conn, rows)
         prelinked_candidate_ids = set(prelink_summary['prelinked_candidate_ids'])
@@ -1208,7 +1215,7 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
 
         naive_unresolved_intents: list[ProviderIntent] = []
         for row in unresolved_rows:
-            naive_unresolved_intents.extend(_build_provider_intents(settings, row[:8]))
+            naive_unresolved_intents.extend(_build_provider_intents(settings, row))
 
         cluster_summary = cluster_candidates_within_batch(settings, repo, conn, unresolved_rows)
         leader_to_followers = dict(cluster_summary.get('leader_to_followers') or {})
@@ -1435,7 +1442,7 @@ def enrich_candidates(settings: Settings, *, limit: int) -> None:
                 _bump_lane_request(dispatch_stats, lane)
                 logger.info('OpenAlex DOI batch chunk %s-%s / %s DOI(s)', i + 1, i + len(chunk), len(doi_values))
                 try:
-                    results = query_openalex_batch_by_doi(chunk, email=settings.openalex_email)
+                    results = query_openalex_batch_by_doi(chunk, email=settings.openalex_email, api_key=settings.openalex_api_key)
                 except Exception as exc:
                     for doi_val in chunk:
                         group = doi_to_group[doi_val]

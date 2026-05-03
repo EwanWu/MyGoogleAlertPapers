@@ -9,6 +9,7 @@ from mygooglealertpapers.db.schema import create_schema_at_default_path
 from mygooglealertpapers.enrich.base import EnrichmentRecord
 from mygooglealertpapers.pipeline.enrich import enrich_candidates
 from mygooglealertpapers.pipeline.merge import build_merged_metadata
+from mygooglealertpapers.normalize.identifiers import recover_doi_from_url_identity
 
 
 def _make_settings(
@@ -321,4 +322,130 @@ def test_same_batch_cluster_reuses_leader_identifier_intents_for_url_exact_follo
         assert conn.execute(
             'SELECT COUNT(*) FROM source_record WHERE candidate_id = ? AND source_name = ?',
             ('cand_follower', 'openalex'),
+        ).fetchone()[0] == 1
+
+
+
+def test_recover_doi_from_url_identity_handles_recursive_decode_and_nature_rule():
+    doi, rule = recover_doi_from_url_identity(
+        'https://www.e-ultrasonography.org/journal/view.php?doi%3D10.14366%252Fusg.23232'
+    )
+    assert doi == '10.14366/usg.23232'
+    assert rule == 'recursive_url_decode'
+
+    doi, rule = recover_doi_from_url_identity(
+        'https://www.nature.com/articles/s41598-026-42032-x_reference.pdf'
+    )
+    assert doi == '10.1038/s41598-026-42032-x'
+    assert rule == 'nature_article_slug'
+
+
+def test_enrich_candidates_can_promote_deterministic_url_identity_doi_into_doi_queries(tmp_path: Path, monkeypatch):
+    db_path = tmp_path / 'mgap.db'
+    create_schema_at_default_path(db_path)
+    settings = _make_settings(
+        db_path,
+        provider_rules={
+            'crossref': {'enabled': True},
+            'openalex': {'enabled': True, 'doi_batch_enabled': False},
+            'semanticscholar': {'enabled': False},
+            'pubmed': {'enabled': True},
+            'europepmc': {'enabled': True, 'trigger_mode': 'narrowed_biomedical_fallback'},
+            'arxiv': {'enabled': False},
+            'unpaywall': {'enabled': False},
+        },
+        runtime_rules={'library_prelink_enabled': False, 'url_identity_doi_recovery_enabled': True},
+    )
+
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            '''
+            INSERT INTO paper_candidate_normalized (
+                candidate_id, norm_title, norm_title_key, first_author_family,
+                year_guess, venue_guess, doi_extracted, url_canonical
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''',
+            (
+                'cand_urlid',
+                'Prevalence of heart failure with preserved ejection fraction in patients with ischemia and non-obstructive coronary arteries',
+                'prevalence of heart failure with preserved ejection fraction in patients with ischemia and non-obstructive coronary arteries',
+                'Wu',
+                '2026',
+                'Scientific Reports',
+                None,
+                'https://www.nature.com/articles/s41598-026-42032-x_reference.pdf',
+            ),
+        )
+        conn.commit()
+
+    calls: list[tuple[str, str | None, str | None]] = []
+
+    def fake_query_crossref(candidate_id: str, *, doi: str | None = None, title: str | None = None, **kwargs):
+        calls.append(('crossref', doi, title))
+        return EnrichmentRecord(
+            candidate_id=candidate_id,
+            source_name='crossref',
+            query_type='doi' if doi else 'title',
+            query_string=doi or title or '',
+            matched=True,
+            match_score=1.0,
+            external_id='crossref:test',
+            title='Recovered by DOI',
+            authors_json='[]',
+            abstract=None,
+            venue='Scientific Reports',
+            year='2026',
+            publication_type='journal-article',
+            doi=doi,
+            pmid=None,
+            pmcid=None,
+            url='https://doi.org/' + (doi or '10.0/test'),
+            raw_payload_json='{}',
+            latency_ms=5,
+        )
+
+    def fake_query_openalex(candidate_id: str, *, doi: str | None = None, title: str | None = None, **kwargs):
+        calls.append(('openalex', doi, title))
+        return EnrichmentRecord(
+            candidate_id=candidate_id,
+            source_name='openalex',
+            query_type='doi' if doi else 'title',
+            query_string=doi or title or '',
+            matched=True,
+            match_score=1.0,
+            external_id='openalex:test',
+            title='Recovered by DOI',
+            authors_json='[]',
+            abstract=None,
+            venue='Scientific Reports',
+            year='2026',
+            publication_type='journal-article',
+            doi=doi,
+            pmid=None,
+            pmcid=None,
+            url='https://doi.org/' + (doi or '10.0/test'),
+            raw_payload_json='{}',
+            latency_ms=5,
+        )
+
+    def unexpected_query(*args, **kwargs):  # pragma: no cover - should never run
+        raise AssertionError('biomedical title fallback should not run once DOI is recovered from URL identity')
+
+    monkeypatch.setattr('mygooglealertpapers.pipeline.enrich.query_crossref', fake_query_crossref)
+    monkeypatch.setattr('mygooglealertpapers.pipeline.enrich.query_openalex', fake_query_openalex)
+    monkeypatch.setattr('mygooglealertpapers.pipeline.enrich.query_pubmed', unexpected_query)
+    monkeypatch.setattr('mygooglealertpapers.pipeline.enrich.query_europepmc', unexpected_query)
+
+    enrich_candidates(settings, limit=10)
+
+    assert ('crossref', '10.1038/s41598-026-42032-x', 'Prevalence of heart failure with preserved ejection fraction in patients with ischemia and non-obstructive coronary arteries') in calls
+    assert ('openalex', '10.1038/s41598-026-42032-x', 'Prevalence of heart failure with preserved ejection fraction in patients with ischemia and non-obstructive coronary arteries') in calls
+    with sqlite3.connect(db_path) as conn:
+        assert conn.execute(
+            'SELECT COUNT(*) FROM source_record WHERE candidate_id = ? AND source_name = ? AND query_type = ?',
+            ('cand_urlid', 'crossref', 'doi'),
+        ).fetchone()[0] == 1
+        assert conn.execute(
+            'SELECT COUNT(*) FROM source_record WHERE candidate_id = ? AND source_name = ? AND query_type = ?',
+            ('cand_urlid', 'openalex', 'doi'),
         ).fetchone()[0] == 1

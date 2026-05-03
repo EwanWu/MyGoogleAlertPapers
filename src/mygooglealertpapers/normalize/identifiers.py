@@ -7,6 +7,17 @@ DOI_RE = re.compile(r"10\.\d{4,9}/[-._;()/:A-Z0-9]+", re.IGNORECASE)
 PMID_RE = re.compile(r"(?:pubmed\.ncbi\.nlm\.nih\.gov/|pmid[/:\s])(?P<pmid>\d{5,10})", re.IGNORECASE)
 PMCID_RE = re.compile(r"(?:pmc(?:\.ncbi\.nlm\.nih\.gov)?/articles/|pmcid[/:\s])(?P<pmcid>PMC\d+)", re.IGNORECASE)
 ARXIV_RE = re.compile(r"arxiv\.org/(?:abs|pdf)/(?P<arxiv>[0-9]{4}\.[0-9]{4,5})(?:v\d+)?", re.IGNORECASE)
+NATURE_ARTICLE_SLUG_RE = re.compile(r"/articles/(?P<slug>[A-Za-z0-9.-]+)", re.IGNORECASE)
+
+
+def _multi_unquote(text: str, *, max_rounds: int = 4) -> str:
+    current = text
+    for _ in range(max(1, max_rounds)):
+        decoded = unquote(current)
+        if decoded == current:
+            break
+        current = decoded
+    return current
 
 
 def extract_doi(text: str | None) -> str | None:
@@ -35,6 +46,32 @@ def extract_arxiv_id(text: str | None) -> str | None:
         return None
     m = ARXIV_RE.search(text)
     return m.group("arxiv") if m else None
+
+
+def recover_doi_from_url_identity(url: str | None) -> tuple[str | None, str | None]:
+    if not url:
+        return None, None
+
+    decoded_url = _multi_unquote(url)
+    decoded_doi = extract_doi(decoded_url)
+    if decoded_doi:
+        return decoded_doi, 'recursive_url_decode'
+
+    parsed = urlparse(decoded_url)
+    netloc = parsed.netloc.lower()
+    path = parsed.path or ''
+
+    if 'nature.com' in netloc:
+        match = NATURE_ARTICLE_SLUG_RE.search(path)
+        if match:
+            slug = match.group('slug')
+            slug = re.sub(r'_reference\.pdf$', '', slug, flags=re.IGNORECASE)
+            slug = re.sub(r'\.pdf$', '', slug, flags=re.IGNORECASE)
+            slug = slug.strip(' /')
+            if slug:
+                return clean_doi(f'10.1038/{slug}'), 'nature_article_slug'
+
+    return None, None
 
 
 def canonicalize_url(url: str | None) -> str | None:

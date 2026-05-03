@@ -61,6 +61,15 @@ def accept_title_match(query_title: str | None, result_title: str | None, query_
     return sim >= 0.90
 
 
+def looks_truncated_source_title(title: str | None) -> bool:
+    if not title:
+        return False
+    text = ' '.join(str(title).split())
+    if '. .' in text or '…' in text:
+        return True
+    return text.endswith('...')
+
+
 def first_author_matches(expected_family: str | None, authors_json: str | None) -> bool | None:
     if not expected_family:
         return None
@@ -168,10 +177,19 @@ def accept_result(query_title: str | None, result_title: str | None, query_year:
     provider_doi_norm = _normalized_doi(provider_doi)
     if candidate_doi_norm and provider_doi_norm and candidate_doi_norm != provider_doi_norm:
         return False
-    if not accept_title_match(query_title, result_title, query_year, result_year):
-        return False
     fam_match = first_author_matches(expected_family, authors_json)
     venue_match = venue_hint_matches(venue_hint, provider_venue)
+    title_ok = accept_title_match(query_title, result_title, query_year, result_year)
+    truncated_title_salvage = (
+        not title_ok
+        and sim >= 0.84
+        and looks_truncated_source_title(query_title)
+        and fam_match is True
+        and venue_match is True
+        and (not query_year or not result_year or query_year == result_year)
+    )
+    if not title_ok and not truncated_title_salvage:
+        return False
     if fam_match is False:
         return False
     if venue_match is False:
