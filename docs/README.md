@@ -31,6 +31,7 @@ Read these first when you want the current project state, current default flow, 
 21. `docs/26-phase2B-targeted-nonarxiv-reject71-review08-promotion-memo-2026-05-02.md`
 22. `docs/27-phase2B-truncated-title-salvage-default-retention-memo-2026-05-02.md`
 23. `docs/29-phase2B-openalex-repository-shadow-topk-retry-default-retention-memo-2026-05-03.md`
+24. `docs/30-phase2B-url-identity-doi-recovery-default-retention-memo-2026-05-03.md`
 
 ### Current active decision layer
 
@@ -55,6 +56,7 @@ Read these first when you want the current project state, current default flow, 
 - `docs/26-phase2B-targeted-nonarxiv-reject71-review08-promotion-memo-2026-05-02.md`
 - `docs/27-phase2B-truncated-title-salvage-default-retention-memo-2026-05-02.md`
 - `docs/29-phase2B-openalex-repository-shadow-topk-retry-default-retention-memo-2026-05-03.md`
+- `docs/30-phase2B-url-identity-doi-recovery-default-retention-memo-2026-05-03.md`
 
 ### Current runtime / provider-lane validation
 
@@ -72,7 +74,8 @@ Read these first when you want the current project state, current default flow, 
 - `docs/26-phase2B-targeted-nonarxiv-reject71-review08-promotion-memo-2026-05-02.md` — final promotion memo approving the non-arXiv `reject71 + review08` route as a precision-first builtin default addition
 - `docs/27-phase2B-truncated-title-salvage-default-retention-memo-2026-05-02.md` — formal memo closing the follow-up default question for the narrow truncated-title salvage rule; this is a shared acceptance-layer retention decision, not a new YAML profile promotion
 - `docs/29-phase2B-openalex-repository-shadow-topk-retry-default-retention-memo-2026-05-03.md` — formal memo closing the repository-shadow follow-up default question; this is a shared OpenAlex-title-path retention decision, not a new YAML profile promotion
-- code/runtime note: the builtin CLI default and baseline helper default are now aligned to the same-batch-clustered `identifier_fastpath + title_core` runtime **with promoted post-openalex conditional suppression for `crossref:url_canonical_only`, the promoted narrow arXiv-gated `url_canonical_only -> top5 + best-accepted` exception, the promoted precision-first non-arXiv `reject71 + review08` cleanup route, the retained narrow truncated-title salvage acceptance repair, and the retained narrow OpenAlex repository-shadow topk retry all enabled in the current default path**
+- `docs/30-phase2B-url-identity-doi-recovery-default-retention-memo-2026-05-03.md` — formal memo closing the URL-identity DOI recovery follow-up default question; this is a shared pre-title identity-path retention decision, not broad DOI scraping
+- code/runtime note: the builtin CLI default and baseline helper default are now aligned to the same-batch-clustered `identifier_fastpath + title_core` runtime **with promoted post-openalex conditional suppression for `crossref:url_canonical_only`, the promoted narrow arXiv-gated `url_canonical_only -> top5 + best-accepted` exception, the promoted precision-first non-arXiv `reject71 + review08` cleanup route, the retained deterministic URL-identity DOI recovery lane, the retained narrow truncated-title salvage acceptance repair, and the retained narrow OpenAlex repository-shadow topk retry all enabled in the current default path**
 
 ### Current operations / data-acquisition validation
 

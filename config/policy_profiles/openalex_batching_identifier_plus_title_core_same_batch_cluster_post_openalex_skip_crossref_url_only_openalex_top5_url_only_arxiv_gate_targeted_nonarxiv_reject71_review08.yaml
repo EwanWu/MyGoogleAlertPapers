@@ -16,6 +16,7 @@ runtime_rules:
     - url_canonical_only
   openalex_title_extra_result_require_arxiv_id_subreasons:
     - url_canonical_only
+  url_identity_doi_recovery_enabled: true
 merge_rules:
   fallback_reject_similarity_threshold_post_openalex_url_only_non_arxiv: 0.71
   fallback_review_similarity_threshold_post_openalex_url_only_non_arxiv: 0.8

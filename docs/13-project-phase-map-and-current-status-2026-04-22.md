@@ -14,7 +14,7 @@ Read this first if you need the shortest path to:
 
 The project is now in:
 
-> **default-flow operational hardening with exact library-first prelink + same-batch clustering active, Phase 2A crossref title suppression promoted, broad Phase 2B top5 rejected, both retained narrow Phase 2B profile-level patches — the arXiv-gated residual top5 exception and the precision-first non-arXiv `reject71 + review08` cleanup route — now bound into the default runtime, the follow-up narrow truncated-title salvage rule retained in the shared default acceptance layer, and the narrow OpenAlex repository-shadow topk retry retained in the shared default OpenAlex title path**
+> **default-flow operational hardening with exact library-first prelink + same-batch clustering active, Phase 2A crossref title suppression promoted, broad Phase 2B top5 rejected, both retained narrow Phase 2B profile-level patches — the arXiv-gated residual top5 exception and the precision-first non-arXiv `reject71 + review08` cleanup route — now bound into the default runtime, the retained deterministic URL-identity DOI recovery lane now bound into the shared default pre-title path, the follow-up narrow truncated-title salvage rule retained in the shared default acceptance layer, and the narrow OpenAlex repository-shadow topk retry retained in the shared default OpenAlex title path**
 
 The pipeline is no longer mainly exploring strategy space. The current work is about locking one coherent default path, hardening the operator/runtime boundary around it, and only promoting narrow request-efficiency optimizations after deterministic replay evidence. As of 2026-04-29, this now includes an active exact library-first prelink layer above provider dispatch rather than treating duplicate-query elimination as a future-only idea.
 
@@ -42,6 +42,7 @@ Runtime defaults now additionally assume:
 - broad `top1 -> top5 + best-accepted` remains rejected as a default residual upgrade
 - narrow `url_canonical_only + arxiv_id_extracted -> top5 + best-accepted` is now the retained Phase 2B promotion result and has now been flipped into the builtin runtime default as a narrow exception rather than a broad residual-path upgrade
 - narrow non-arXiv `targeted_nonarxiv_reject71_review08` is now also promoted into the builtin default as a precision-first residual cleanup rule for the remaining non-arXiv `url_canonical_only` subgroup
+- deterministic URL-identity DOI recovery is retained in the shared default pre-title identity path for `non-arXiv + url_canonical_only` candidates when DOI recovery succeeds through the current narrow deterministic rules (`recursive_url_decode`, `nature_article_slug`); this is a default runtime retention, not broad fetch-based DOI scraping
 - narrow truncated-title salvage is retained in the shared default acceptance layer for title-core matches when truncation signal + author agreement + venue agreement jointly hold; this is a code-level default retention, not a separate YAML profile flip
 - narrow OpenAlex repository-shadow topk retry is retained in the shared default OpenAlex title path: when a top1 result looks like a repository-shadow false lead (title/author aligned but venue-mismatched repository article), do one local `per_page=5` retry and re-pick only if a later result passes the existing accepted-result check; this is a code-level default retention, not a new profile fork
 
@@ -109,6 +110,7 @@ The current runtime-default additions are justified by a smaller but decision-gr
 - `docs/26-phase2B-targeted-nonarxiv-reject71-review08-promotion-memo-2026-05-02.md`
 - `docs/27-phase2B-truncated-title-salvage-default-retention-memo-2026-05-02.md`
 - `docs/29-phase2B-openalex-repository-shadow-topk-retry-default-retention-memo-2026-05-03.md`
+- `docs/30-phase2B-url-identity-doi-recovery-default-retention-memo-2026-05-03.md`
 
 What these established:
 - Day 2 operator-boundary hardening is in place and regression-tested
@@ -123,6 +125,7 @@ What these established:
 - the current Phase 2A strict-rule result is now also decision-grade and has now been bound into the promoted runtime default: blanket `crossref:url_canonical_only` skipping was rejected for semantic regression, while the narrower post-openalex conditional suppression rule passed both fixed-slice and fresh-like semantic gates and is now the retained narrow runtime hardening rule for that subgroup
 - Phase 2B has now also closed the next residual question: broad `top1 -> top5 + best-accepted` failed the large-scale efficiency gate on 956 candidates, but retrospective exact subgroup validation showed that all 4 observed final-confidence gains were concentrated in a 26-candidate arXiv-native residual subgroup, so the retained Phase 2B result is a narrow promoted exception rather than a broad default flip
 - the remaining non-arXiv residual cleanup route now also has a durable runner and passed exact reproducibility against the prior day11 stable replay; that route has now crossed the final policy bar and is promoted into the builtin default explicitly as a precision-first cleanup rule rather than a neutral runtime tweak
+- deterministic URL-identity DOI recovery should now also remain in the current default pre-title identity path because it passed medium60, passed large-fixed, and remained positive when rechecked against the repo-shadow current default; this should be described as pre-title identity hardening rather than broad DOI scraping
 - the follow-up truncated-title salvage question is now also closed: the rule should remain in the current default shared acceptance layer because it produces narrow durable title-core rescues without review/conflict regression, and should be described as a precision-preserving acceptance repair rather than a proven live speedup
 - the next OpenAlex residual-routing question is now also closed: the narrow repository-shadow topk retry should remain in the current default OpenAlex title path because it passed the medium60 clean gate and beat the clean large-fixed control on both request shape and top-line output without increasing review/conflict burden; this should be described as a precision-preserving local routing repair rather than a broad top5 promotion
 
@@ -150,16 +153,18 @@ What these established:
 20. `docs/26-phase2B-targeted-nonarxiv-reject71-review08-promotion-memo-2026-05-02.md`
 21. `docs/27-phase2B-truncated-title-salvage-default-retention-memo-2026-05-02.md`
 22. `docs/29-phase2B-openalex-repository-shadow-topk-retry-default-retention-memo-2026-05-03.md`
+23. `docs/30-phase2B-url-identity-doi-recovery-default-retention-memo-2026-05-03.md`
 
 ## What is still open
 
-The main unresolved problem is no longer whether staged live lanes are viable, nor whether exact library-first prelink is worth implementing, nor whether exact same-batch clustering can matter in practice. All three are now established and have now been promoted into the default runtime layer. The Phase 2B non-arXiv residual default-policy question is now also closed: the project has accepted the precision-first trade of `targeted_nonarxiv_reject71_review08` as a builtin default addition. The next unresolved problem is therefore narrower again: **whether the surviving review band `(0.71, 0.80]` should stay as review, or whether part of it can be safely collapsed further without reopening broad residual risk**.
+The main unresolved problem is no longer whether staged live lanes are viable, nor whether exact library-first prelink is worth implementing, nor whether exact same-batch clustering can matter in practice. All three are now established and have now been promoted into the default runtime layer. The Phase 2B non-arXiv residual default-policy question is now also closed: the project has accepted the precision-first trade of `targeted_nonarxiv_reject71_review08` as a builtin default addition. The review-band follow-up has now also narrowed further after the day15 refresh: the surviving `(0.71, 0.80]` residual-policy tail is no longer a substantial coding target. The next unresolved problem is therefore: **whether a similarly narrow deterministic URL-origin identity expansion beyond the current retained rules is worth adding for the remaining publisher-page residuals, without reopening broad fetch/scrape behavior**.
 
 The next useful validation / rollout step is:
 - preserve the current promoted mainline/runtime defaults
 - keep exact `library_prelink` enabled as the first-layer short-circuit
 - keep exact same-batch clustering enabled as the second-layer short-circuit
 - use `identifier_fastpath + title_core` as the synchronous live default base
+- keep the retained deterministic URL-identity DOI recovery lane enabled in the default pre-title path
 - keep the validated post-openalex conditional suppression rule for `crossref:url_canonical_only`
 - retain the promoted Phase 2B arXiv-gated `top5 + best-accepted` exception as the only approved residual top5 expansion
 - keep `biomedical_fallback` and `slow_fallback` outside the synchronous default path until separately budgeted

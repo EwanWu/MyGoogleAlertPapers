@@ -19,5 +19,6 @@ def test_builtin_default_policy_profile_promotes_post_openalex_crossref_suppress
     assert profile.runtime_value('openalex_title_per_page_by_subreason') == {'url_canonical_only': 5}
     assert profile.runtime_value('openalex_title_pick_best_accepted_subreasons') == ['url_canonical_only']
     assert profile.runtime_value('openalex_title_extra_result_require_arxiv_id_subreasons') == ['url_canonical_only']
+    assert profile.runtime_value('url_identity_doi_recovery_enabled') is True
     assert profile.provider_value('openalex', 'doi_batch_enabled') is True
     assert profile.provider_value('crossref', 'title_payload_reuse_enabled') is True

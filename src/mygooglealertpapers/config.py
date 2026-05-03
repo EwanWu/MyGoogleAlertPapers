@@ -108,6 +108,7 @@ def _default_policy_profile() -> PolicyProfile:
             },
             'openalex_title_pick_best_accepted_subreasons': ['url_canonical_only'],
             'openalex_title_extra_result_require_arxiv_id_subreasons': ['url_canonical_only'],
+            'url_identity_doi_recovery_enabled': True,
         },
         'replay_defaults': {
             'stages': ['enrich', 'merge', 'dedup'],
