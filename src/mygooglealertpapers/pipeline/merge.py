@@ -275,6 +275,43 @@ def _apply_pubmed_doi_suppression(
                 consensus_supporters = ['crossref', 'candidate_url', 'candidate_venue']
                 crossref_consensus_row = row
 
+    europepmc_pmid_consensus_row = None
+    if not consensus_doi:
+        europepmc_rows = [
+            row for row in rows
+            if row.get('source_name') == 'europepmc'
+            and row.get('query_type') == 'pmid'
+            and row.get('matched')
+            and _normalize_conflict_value('doi', row.get('doi'))
+        ]
+        pubmed_pmid_rows = [
+            row for row in rows
+            if row.get('source_name') == 'pubmed'
+            and row.get('query_type') == 'pmid'
+            and row.get('matched')
+            and _normalize_conflict_value('doi', row.get('doi'))
+        ]
+        if len(europepmc_rows) == 1 and len(pubmed_pmid_rows) == 1:
+            europepmc_row = europepmc_rows[0]
+            pubmed_row = pubmed_pmid_rows[0]
+            pubmed_pmid = _normalize_conflict_value('pmid', pubmed_row.get('pmid'))
+            europepmc_pmid = _normalize_conflict_value('pmid', europepmc_row.get('pmid'))
+            if (
+                pubmed_pmid
+                and europepmc_pmid
+                and pubmed_pmid == europepmc_pmid
+                and _normalize_conflict_value('doi', pubmed_row.get('doi')) != _normalize_conflict_value('doi', europepmc_row.get('doi'))
+                and (_normalize_conflict_value('pmcid', pubmed_row.get('pmcid')) or not _is_non_ncbi_candidate_url(candidate_url))
+                and (
+                    _titles_look_like_variants([str(pubmed_row.get('title') or ''), str(europepmc_row.get('title') or '')])
+                    or _venue_rough_match(pubmed_row.get('venue'), europepmc_row.get('venue'))
+                )
+                and (not candidate_year or not europepmc_row.get('year') or str(candidate_year) == str(europepmc_row.get('year')))
+            ):
+                consensus_doi = _normalize_conflict_value('doi', europepmc_row.get('doi'))
+                consensus_supporters = ['europepmc', 'candidate_pmid_chain']
+                europepmc_pmid_consensus_row = europepmc_row
+
     if not consensus_doi:
         return rows, []
 
@@ -287,12 +324,20 @@ def _apply_pubmed_doi_suppression(
         pubmed_pmcid = _normalize_conflict_value('pmcid', row.get('pmcid'))
         candidate_pmcid_norm = _normalize_conflict_value('pmcid', candidate_pmcid)
         pmcid_conflict = bool(candidate_pmcid_norm and pubmed_pmcid and candidate_pmcid_norm != pubmed_pmcid)
-        if source_name == 'pubmed' and query_type == 'title' and doi_norm and doi_norm != consensus_doi:
-            suppression_reason = 'pubmed_title_doi_conflicts_with_consensus'
+        is_pubmed_doi_conflict = (
+            source_name == 'pubmed'
+            and query_type in {'title', 'pmid'}
+            and doi_norm
+            and doi_norm != consensus_doi
+        )
+        if is_pubmed_doi_conflict:
+            suppression_reason = f'pubmed_{query_type}_doi_conflicts_with_consensus'
             if pmcid_conflict:
-                suppression_reason = 'pubmed_title_doi_conflicts_with_candidate_pmcid'
+                suppression_reason = f'pubmed_{query_type}_doi_conflicts_with_candidate_pmcid'
             elif crossref_consensus_row is not None:
-                suppression_reason = 'pubmed_title_doi_conflicts_with_crossref_plus_candidate_url'
+                suppression_reason = f'pubmed_{query_type}_doi_conflicts_with_crossref_plus_candidate_url'
+            elif europepmc_pmid_consensus_row is not None:
+                suppression_reason = f'pubmed_{query_type}_doi_conflicts_with_europepmc_pmid_consensus'
             new_row = dict(row)
             suppressed.append(
                 {

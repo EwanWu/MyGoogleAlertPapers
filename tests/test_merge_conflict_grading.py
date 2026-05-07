@@ -83,6 +83,41 @@ def test_pubmed_title_doi_is_suppressed_when_candidate_pmcid_conflicts():
     assert suppressed[0]['suppression_reason'] == 'pubmed_title_doi_conflicts_with_candidate_pmcid'
 
 
+def test_pubmed_pmid_doi_is_suppressed_when_europepmc_and_openalex_agree():
+    rows = [
+        {'source_name': 'europepmc', 'query_type': 'pmid', 'matched': 1, 'title': 'Microglia Pyroptosis-Derived IL-18 Drives White Matter Injury in Developing Brain following Hypothermic Hypoxia-Ischemia', 'doi': '10.1007/s12264-026-01602-9', 'pmid': '41796421', 'pmcid': None, 'venue': 'Neurosci Bull', 'year': '2026'},
+        {'source_name': 'openalex', 'query_type': 'title', 'matched': 1, 'title': 'Microglia Pyroptosis-Derived IL-18 Drives White Matter Injury in Developing Brain following Hypothermic Hypoxia-Ischemia', 'doi': '10.1007/s12264-026-01602-9', 'pmid': '41796421', 'pmcid': None, 'venue': 'Neuroscience Bulletin', 'year': '2026'},
+        {'source_name': 'pubmed', 'query_type': 'pmid', 'matched': 1, 'title': 'Microglia Pyroptosis-Derived IL-18 Drives White Matter Injury in Developing Brain following Hypothermic Hypoxia-Ischemia.', 'doi': '10.1016/S0003-4975(97)82824-X', 'pmid': '41796421', 'pmcid': '7190443', 'venue': 'Neuroscience bulletin', 'year': '2026'},
+    ]
+    adjusted, suppressed = _apply_pubmed_doi_suppression(rows)
+    pubmed_row = next(row for row in adjusted if row['source_name'] == 'pubmed')
+    assert pubmed_row['doi'] is None
+    assert len(suppressed) == 1
+    assert suppressed[0]['query_type'] == 'pmid'
+    assert suppressed[0]['suppression_reason'] == 'pubmed_pmid_doi_conflicts_with_consensus'
+    assessment = _build_conflict_assessment(adjusted, ['title', 'venue', 'year', 'doi', 'pmid'])
+    assert assessment['canonical_blocked'] is False
+
+
+def test_pubmed_pmid_doi_is_suppressed_when_europepmc_only_disagrees_on_pubmed_url_chain():
+    rows = [
+        {'source_name': 'europepmc', 'query_type': 'pmid', 'matched': 1, 'title': 'Quantitative susceptibility mapping in pediatric neuroimaging: a systematic review of applications and advancements', 'doi': '10.1007/s00247-026-06565-7', 'pmid': '41801366', 'pmcid': None, 'venue': 'Pediatr Radiol', 'year': '2026'},
+        {'source_name': 'pubmed', 'query_type': 'pmid', 'matched': 1, 'title': 'Quantitative susceptibility mapping in pediatric neuroimaging: a systematic review of applications and advancements.', 'doi': '10.1111/acer.14928', 'pmid': '41801366', 'pmcid': 'PMC9183007', 'venue': 'Pediatric radiology', 'year': '2026'},
+    ]
+    adjusted, suppressed = _apply_pubmed_doi_suppression(
+        rows,
+        candidate_year='2026',
+        candidate_url='https://pubmed.ncbi.nlm.nih.gov/41801366/',
+        candidate_pmcid=None,
+    )
+    pubmed_row = next(row for row in adjusted if row['source_name'] == 'pubmed')
+    assert pubmed_row['doi'] is None
+    assert len(suppressed) == 1
+    assert suppressed[0]['suppression_reason'] == 'pubmed_pmid_doi_conflicts_with_europepmc_pmid_consensus'
+    assessment = _build_conflict_assessment(adjusted, ['title', 'venue', 'year', 'doi', 'pmid'])
+    assert assessment['canonical_blocked'] is False
+
+
 def test_legacy_conflict_payload_with_identifier_disagreement_still_blocks():
     assessment = _parse_conflict_assessment('{"doi": ["10.1/a", "10.1/b"]}')
     assert assessment['canonical_blocked'] is True
